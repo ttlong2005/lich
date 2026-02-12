@@ -11,26 +11,20 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # Kết nối Google Sheets
 def get_sheet():
     try:
-        # 1. Đọc dữ liệu từ Secrets
-        creds_dict = dict(st.secrets["gcp_service_account"])
+        # Lấy info từ Secrets
+        info = dict(st.secrets["gcp_service_account"])
         
-        # 2. VỆ SINH MÃ KHÓA: Loại bỏ rác định dạng
-        if "private_key" in creds_dict:
-            # Xử lý cả dấu xuống dòng thật và dấu \n dạng văn bản
-            pk = creds_dict["private_key"]
-            pk = pk.replace("\\n", "\n") # Biến ký tự \n văn bản thành dấu xuống dòng thật
-            pk = pk.strip()              # Xóa khoảng trắng thừa ở 2 đầu
-            creds_dict["private_key"] = pk
+        # Vệ sinh private_key để tránh lỗi InvalidByte
+        if "private_key" in info:
+            # Chuyển \n văn bản thành dấu xuống dòng thật và xóa dấu cách thừa
+            info["private_key"] = info["private_key"].replace("\\n", "\n").strip()
         
-        # 3. Kết nối
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        creds = Credentials.from_service_account_info(info, scopes=scope)
         client = gspread.authorize(creds)
         
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
-        
     except Exception as e:
-        # Nếu vẫn lỗi, nó sẽ hiện thông báo sạch sẽ hơn
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
