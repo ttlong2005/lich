@@ -1,19 +1,17 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from vnlunar import LunarDate
 import gspread
 from google.oauth2.service_account import Credentials
 
-# 1. Kết nối Google Sheets bằng Robot
 def get_sheet():
-    scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    # Lấy thông tin Robot từ Secrets
-    creds_dict = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    # Cách lấy thông tin Robot từ định dạng TOML của Streamlit
+    creds_info = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_info)
     client = gspread.authorize(creds)
-    # Mở file bằng ID
     return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+
+# ... (Các phần code main và login anh giữ nguyên như cũ) ...
 
 st.set_page_config(page_title="Lịch Gia Đình Tự Động", page_icon="📅")
 
