@@ -6,19 +6,12 @@ from google.oauth2.service_account import Credentials
 import base64
 import json
 
-# --- CẤU HÌNH TRANG ---
+# --- CẤU HÌNH ---
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
-# --- HÀM TÍNH NGÀY ÂM (ĐƠN GIẢN) ---
-def get_lunar_date(date_obj):
-    # Đây là hàm rút gọn, anh có thể cập nhật sau
-    # Hiện tại để app chạy, em sẽ hiển thị ngày dương và ghi chú loại ngày
-    return f"{date_obj.day}/{date_obj.month} (Dương)"
-
-# --- KẾT NỐI GOOGLE SHEETS ---
 def get_sheet():
     try:
-        b64_str = st.secrets["google_key_base64"].strip().replace("\n", "")
+        b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
         json_data = base64.b64decode(b64_str).decode('utf-8')
         creds_info = json.loads(json_data)
         if "private_key" in creds_info:
@@ -32,7 +25,6 @@ def get_sheet():
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
-# --- KIỂM TRA MẬT KHẨU ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập hệ thống")
@@ -46,45 +38,42 @@ def check_password():
         return False
     return True
 
-# --- GIAO DIỆN CHÍNH ---
-def main():
+# --- GIAO DIỆN ---
+if check_password():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
-    if sheet is None: return
+    
+    if sheet:
+        now = datetime.now()
+        st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')}")
 
-    now = datetime.now()
-    st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')}")
+        with st.expander("➕ Thêm sự kiện mới", expanded=True):
+            name = st.text_input("Tên sự kiện:")
+            col1, col2 = st.columns(2)
+            with col1:
+                etype = st.radio("Loại ngày:", ["Dương lịch", "Âm lịch"], horizontal=True)
+            with col2:
+                if etype == "Âm lịch":
+                    d = st.number_input("Ngày âm", 1, 30, 15)
+                    m = st.number_input("Tháng âm", 1, 12, 1)
+                    final_date = f"{int(d)}/{int(m)}"
+                else:
+                    dt = st.date_input("Chọn ngày:", value=now)
+                    final_date = dt.strftime("%d/%m")
 
-    with st.expander("➕ Thêm sự kiện mới", expanded=True):
-        name = st.text_input("Tên sự kiện:")
-        col1, col2 = st.columns(2)
-        with col1:
-            etype = st.radio("Loại ngày:", ["Dương lịch", "Âm lịch"], horizontal=True)
-        with col2:
-            if etype == "Âm lịch":
-                d = st.number_input("Ngày âm", 1, 30, 15)
-                m = st.number_input("Tháng âm", 1, 12, 1)
-                final_date = f"{int(d)}/{int(m)}"
+            if st.button("🚀 Lưu vào lịch"):
+                if name:
+                    sheet.append_row([name, final_date, etype])
+                    st.success("Đã lưu!")
+                    st.rerun()
+
+        st.write("---")
+        st.subheader("🔔 Danh sách sự kiện")
+        try:
+            data = sheet.get_all_records()
+            if data:
+                st.table(pd.DataFrame(data))
             else:
-                dt = st.date_input("Chọn ngày:", value=now)
-                final_date = dt.strftime("%d/%m")
-
-        if st.button("🚀 Lưu vào lịch"):
-            if name:
-                sheet.append_row([name, final_date, etype])
-                st.success("Đã lưu!")
-                st.rerun()
-
-    st.write("---")
-    st.subheader("🔔 Danh sách sự kiện")
-    try:
-        data = sheet.get_all_records()
-        if data:
-            st.table(pd.DataFrame(data))
-        else:
-            st.write("Chưa có dữ liệu.")
-    except Exception as e:
-        st.write("Đang tải hoặc lỗi dữ liệu...")
-
-if check_password():
-    main()
+                st.write("Chưa có dữ liệu.")
+        except:
+            st.write("Đang tải dữ liệu...")
