@@ -4,25 +4,24 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import requests
-from lunarcalendar import Lunar, Converter
+from lunar_python import Lunar, Solar
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅")
 
-# --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
+# --- HÀM CHUYỂN ÂM SANG DƯƠNG CHUẨN ---
 def get_solar_from_lunar(lunar_day, lunar_month):
-    try:
-        now = datetime.now()
-        lunar_date = Lunar(now.year, lunar_month, lunar_day)
-        solar_date = Converter.LunarToSolar(lunar_date)
-        dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
-        
-        if (dt_solar.date() - now.date()).days < 0:
-            lunar_date = Lunar(now.year + 1, lunar_month, lunar_day)
-            solar_date = Converter.LunarToSolar(lunar_date)
-            dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
-        return dt_solar
-    except:
-        return None
+    now = datetime.now()
+    # Tạo ngày âm cho năm hiện tại
+    lunar = Lunar.fromYmd(now.year, lunar_month, lunar_day)
+    solar = lunar.getSolar()
+    dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
+    
+    # Nếu ngày đó đã qua, tính cho năm sau
+    if (dt_solar.date() - now.date()).days < 0:
+        lunar = Lunar.fromYmd(now.year + 1, lunar_month, lunar_day)
+        solar = lunar.getSolar()
+        dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
+    return dt_solar
 
 def send_telegram(message):
     try:
@@ -58,7 +57,9 @@ else:
 
         for index, row in df.iterrows():
             try:
+                # Xử lý ngày (hỗ trợ cả 6/1 và 06/01)
                 day, month = map(int, str(row['Ngày']).split('/'))
+                
                 if "Âm lịch" in str(row['Loại']):
                     event_date = get_solar_from_lunar(day, month)
                 else:
@@ -66,17 +67,14 @@ else:
                     if (event_date.date() - now.date()).days < 0:
                         event_date = datetime(now.year + 1, month, day)
                 
-                if event_date:
-                    diff = (event_date.date() - now.date()).days
-                    days_left_list.append(diff)
-                    if diff == 3:
-                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày nữa!")
-                else:
-                    days_left_list.append(999) # Giá trị tạm nếu lỗi
+                diff = (event_date.date() - now.date()).days
+                days_left_list.append(diff)
+                
+                if diff == 3:
+                    send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày!")
             except:
-                days_left_list.append(999)
+                days_left_list.append(None) # Để trống nếu lỗi định dạng ngày
 
         df['Số ngày sắp đến'] = days_left_list
-        # Sắp xếp để những ngày gần nhất (số nhỏ) hiện lên đầu
-        df_sorted = df.sort_values(by='Số ngày sắp đến')
-        st.dataframe(df_sorted, width='stretch')
+        # Hiển thị bảng
+        st.dataframe(df.sort_values(by='Số ngày sắp đến'), use_container_width=True)
