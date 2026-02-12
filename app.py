@@ -11,9 +11,7 @@ st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="�
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG CHUẨN XÁC ---
 def get_solar_from_lunar(lunar_day, lunar_month):
     now = datetime.now()
-    # 1. Thử tính ngày âm đó ở năm ngoái (cho các ngày cuối năm âm rơi vào đầu năm dương)
-    # 2. Thử tính cho năm nay
-    # 3. Thử tính cho năm sau
+    # Kiểm tra 3 năm để tìm ngày âm gần nhất trong tương lai
     years_to_check = [now.year - 1, now.year, now.year + 1]
     potential_dates = []
 
@@ -22,13 +20,12 @@ def get_solar_from_lunar(lunar_day, lunar_month):
             lunar = Lunar.fromYmd(y, lunar_month, lunar_day)
             solar = lunar.getSolar()
             dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
-            # Chỉ lấy các ngày chưa qua hoặc chỉ mới qua tối đa 1 ngày (để báo đúng ngày)
+            # Lấy ngày chưa qua hoặc chỉ mới qua hôm nay (>= -1)
             if (dt_solar.date() - now.date()).days >= -1:
                 potential_dates.append(dt_solar)
         except:
             continue
     
-    # Chọn ngày gần nhất trong tương lai
     if potential_dates:
         return min(potential_dates)
     return None
@@ -59,11 +56,21 @@ if "password_correct" not in st.session_state:
             st.rerun()
 else:
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
+    
+    # --- HIỂN THỊ NGÀY HÔM NAY (MỚI) ---
+    now = datetime.now()
+    solar_now = Solar.fromDate(now)
+    lunar_now = Lunar.fromDate(now)
+    
+    st.info(f"""
+    📅 **Hôm nay:** {now.strftime('%d/%m/%Y')} (Dương lịch)  
+    🌙 **Âm lịch:** Ngày {lunar_now.getDay()}/{lunar_now.getMonth()} năm {lunar_now.getYearInGanZhi()} ({lunar_now.getYearZhi()})
+    """)
+
     sheet = get_sheet()
     if sheet:
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
-        now = datetime.now()
         days_left_list = []
 
         for index, row in df.iterrows():
@@ -73,7 +80,6 @@ else:
                 if "Âm lịch" in str(row['Loại']):
                     event_date = get_solar_from_lunar(day, month)
                 else:
-                    # Dương lịch
                     event_date = datetime(now.year, month, day)
                     if (event_date.date() - now.date()).days < -1:
                         event_date = datetime(now.year + 1, month, day)
@@ -82,18 +88,17 @@ else:
                     diff = (event_date.date() - now.date()).days
                     days_left_list.append(diff)
                     
-                    # Thông báo nếu đúng 3 ngày (hoặc hôm nay nếu anh muốn)
                     if diff == 3:
-                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày!")
+                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày nữa!")
                 else:
                     days_left_list.append(None)
             except:
                 days_left_list.append(None)
 
         df['Số ngày sắp đến'] = days_left_list
-        # Hiển thị bảng và sắp xếp
+        st.subheader("📋 Danh sách sự kiện")
         df_display = df.sort_values(by='Số ngày sắp đến', ascending=True)
-        st.dataframe(df_display, width='stretch')
+        st.dataframe(df_display, use_container_width=True)
 
         with st.expander("➕ Thêm sự kiện mới"):
             name = st.text_input("Tên:")
