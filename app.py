@@ -4,26 +4,22 @@ from datetime import datetime
 from vnlunar import LunarDate
 import gspread
 from google.oauth2.service_account import Credentials
+import base64
+import json
 
 # 1. Cấu hình trang
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
 # 2. Hàm kết nối Google Sheets
-import base64
-import json
-
 def get_sheet():
     try:
-        # 1. Lấy chuỗi và dọn dẹp sạch sẽ khoảng trắng/xuống dòng dư thừa
-        b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
-        
-        # 2. Giải mã Base64
-        json_data = base64.b64decode(b64_str).decode('utf-8')
-        
-        # 3. Chuyển thành Dictionary
+        # Lấy chuỗi từ Secrets và dọn dẹp ký tự lạ
+        raw_b64 = st.secrets["google_key_base64"].strip()
+        # Giải mã
+        json_data = base64.b64decode(raw_b64).decode('utf-8')
         creds_info = json.loads(json_data)
         
-        # 4. Xử lý ký tự xuống dòng trong private_key (Cực kỳ quan trọng)
+        # Xử lý ký tự xuống dòng cho Google
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
@@ -35,13 +31,13 @@ def get_sheet():
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
-# 3. Hàm tính ngày âm lịch
+
+# Các hàm phụ trợ
 def get_lunar_now():
     now = datetime.now()
     lunar = LunarDate.from_solar_date(now.year, now.month, now.day)
     return f"{lunar.day}/{lunar.month}"
 
-# 4. Kiểm tra mật khẩu
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập hệ thống")
@@ -55,7 +51,6 @@ def check_password():
         return False
     return True
 
-# 5. Giao diện chính
 def main():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
