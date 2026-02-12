@@ -13,10 +13,12 @@ import json
 
 def get_sheet():
     try:
-        with open('key.json') as f:
+        import json
+        # Đọc file key.json
+        with open('key.json', 'r') as f:
             creds_info = json.load(f)
         
-        # Sửa lỗi ký tự xuống dòng nếu có
+        # Tự động sửa lỗi ký tự xuống dòng (quan trọng)
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
