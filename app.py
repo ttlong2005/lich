@@ -2,24 +2,26 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from vnlunar import LunarDate
+import gspread
+from google.oauth2.service_account import Credentials
 
-# 1. Cấu hình
-st.set_page_config(page_title="Nhắc Nhở Sự Kiện", page_icon="📅")
+# 1. Kết nối Google Sheets bằng Robot
+def get_sheet():
+    scope = ["https://www.googleapis.com/auth/spreadsheets"]
+    # Lấy thông tin Robot từ Secrets
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    client = gspread.authorize(creds)
+    # Mở file bằng ID
+    return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
 
-# Hàm đọc/ghi dữ liệu từ Google Sheets (dạng CSV export)
-def load_data():
-    sheet_id = st.secrets["sheet_id"]
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-    try:
-        return pd.read_csv(url)
-    except:
-        return pd.DataFrame(columns=["Tên", "Ngày", "Loại"])
+st.set_page_config(page_title="Lịch Gia Đình Tự Động", page_icon="📅")
 
 def check_password():
     if "password_correct" not in st.session_state:
-        st.subheader("🔒 Đăng nhập")
+        st.subheader("🔒 Đăng nhập hệ thống")
         pw = st.text_input("Mật khẩu:", type="password")
-        if st.button("Vào hệ thống"):
+        if st.button("Vào app"):
             if pw == st.secrets["password"]:
                 st.session_state.password_correct = True
                 st.rerun()
@@ -29,12 +31,11 @@ def check_password():
     return True
 
 def main():
-    st.title("📅 Lịch Gia Đình Vĩnh Viễn")
+    st.title("📅 Quản Lý Sự Kiện Tự Động")
+    sheet = get_sheet()
     
-    # Load dữ liệu từ Sheets
-    df = load_data()
-
-    with st.expander("➕ Thêm sự kiện mới"):
+    # --- PHẦN THÊM MỚI ---
+    with st.expander("➕ Thêm sự kiện mới (Tự động lưu)", expanded=True):
         name = st.text_input("Tên sự kiện:")
         col1, col2 = st.columns(2)
         with col1:
@@ -48,16 +49,22 @@ def main():
                 dt = st.date_input("Chọn ngày:")
                 final_date = dt.strftime("%d/%m")
 
-        if st.button("Lưu vĩnh viễn"):
+        if st.button("🚀 Lưu vĩnh viễn"):
             if name:
-                st.warning("Anh hãy copy dòng này dán vào file Google Sheet của anh để lưu nhé (Tạm thời):")
-                st.code(f"{name},{final_date},{etype}")
-                # Lưu ý: Ghi trực tiếp vào Google Sheets từ Streamlit cần cài đặt Service Account phức tạp hơn.
-                # Cách này giúp anh quản lý file Sheet thủ công nhưng cực kỳ an toàn.
+                # Robot tự động chèn thêm 1 dòng vào cuối Sheet
+                sheet.append_row([name, final_date, etype])
+                st.success(f"Đã lưu '{name}' vào Google Sheets!")
+                st.rerun()
 
+    # --- PHẦN HIỂN THỊ ---
     st.write("---")
-    st.subheader("🔔 Danh sách sự kiện")
-    st.table(df)
+    st.subheader("🔔 Danh sách từ Google Sheets")
+    data = sheet.get_all_records()
+    if data:
+        df = pd.DataFrame(data)
+        st.table(df)
+    else:
+        st.write("Chưa có dữ liệu.")
 
 if check_password():
     main()
