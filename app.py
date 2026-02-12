@@ -1,64 +1,37 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 from vnlunar import LunarDate
-import gspread
-from google.oauth2.service_account import Credentials
-import base64
-import json
 
 # 1. Cấu hình trang
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
-# 2. Hàm kết nối Google Sheets
-def get_sheet():
+# 2. Kết nối Google Sheets (Cách mới đơn giản hơn)
+def get_sheet_data():
     try:
-        # Lấy chuỗi đã mã hóa từ Secrets
-        b64_str = st.secrets["google_key_base64"]
-        # Giải mã và dọn dẹp ký tự
-        json_data = base64.b64decode(b64_str).decode('utf-8')
-        creds_info = json.loads(json_data)
-        
-        # Xử lý ký tự xuống dòng (Fix lỗi Unable to load PEM)
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-            
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
-        client = gspread.authorize(creds)
-        
-        return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Đọc dữ liệu từ URL trong secrets
+        df = conn.read(spreadsheet=st.secrets["spreadsheet"])
+        return conn, df
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {str(e)}")
-        return None
+        st.error(f"Lỗi kết nối: {e}")
+        return None, None
 
-# Các hàm phụ trợ
+# 3. Hàm tính ngày âm lịch
 def get_lunar_now():
     now = datetime.now()
     lunar = LunarDate.from_solar_date(now.year, now.month, now.day)
     return f"{lunar.day}/{lunar.month}"
 
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.subheader("🔒 Đăng nhập hệ thống")
-        pw = st.text_input("Mật khẩu:", type="password")
-        if st.button("Vào hệ thống"):
-            if pw == st.secrets["password"]:
-                st.session_state.password_correct = True
-                st.rerun()
-            else:
-                st.error("Sai mật khẩu!")
-        return False
-    return True
+# 4. Giao diện chính
+st.title("📅 Quản Lý Sự Kiện Gia Đình")
 
-def main():
-    st.title("📅 Quản Lý Sự Kiện Gia Đình")
-    sheet = get_sheet()
-    if sheet is None: return
+conn, df = get_sheet_data()
 
+if df is not None:
     now = datetime.now()
-    lunar_now = get_lunar_now()
-    st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {lunar_now}")
+    st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {get_lunar_now()}")
 
     with st.expander("➕ Thêm sự kiện mới", expanded=True):
         name = st.text_input("Tên sự kiện:")
@@ -76,20 +49,14 @@ def main():
 
         if st.button("🚀 Lưu vào lịch"):
             if name:
-                sheet.append_row([name, final_date, etype])
-                st.success("Đã lưu!")
+                # Tạo dòng mới
+                new_row = pd.DataFrame([{"Tên sự kiện": name, "Ngày": final_date, "Loại": etype}])
+                # Cập nhật vào Sheet
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+                conn.update(spreadsheet=st.secrets["spreadsheet"], data=updated_df)
+                st.success("Đã lưu thành công!")
                 st.rerun()
 
     st.write("---")
     st.subheader("🔔 Danh sách sự kiện")
-    try:
-        data = sheet.get_all_records()
-        if data:
-            st.table(pd.DataFrame(data))
-        else:
-            st.write("Chưa có dữ liệu.")
-    except:
-        st.write("Đang tải dữ liệu...")
-
-if check_password():
-    main()
+    st.table(df)
