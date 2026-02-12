@@ -9,22 +9,26 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
 # 2. Hàm kết nối Google Sheets
+import base64
 import json
 
 def get_sheet():
     try:
-        import json
-        # Đọc file key.json
-        with open('key.json', 'r') as f:
-            creds_info = json.load(f)
+        # 1. Lấy chuỗi mã hóa từ Secrets
+        b64_str = st.secrets["google_key_base64"]
         
-        # Tự động sửa lỗi ký tự xuống dòng (quan trọng)
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-            
+        # 2. Giải mã Base64 sang JSON string
+        json_data = base64.b64decode(b64_str).decode('utf-8')
+        
+        # 3. Chuyển JSON string thành Dictionary
+        creds_info = json.loads(json_data)
+        
+        # 4. Kết nối Google Sheets
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
+        
+        # Mở bằng sheet_id từ Secrets
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
