@@ -11,23 +11,20 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # 2. Hàm kết nối Google Sheets
 def get_sheet():
     try:
-        # Lấy thông tin từ Secrets của Streamlit
+        # Lấy thông tin từ Secrets
         creds_info = dict(st.secrets["gcp_service_account"])
         
-        # Xử lý lỗi ký tự lạ (InvalidByte) thường gặp khi copy-paste
+        # Dòng cực kỳ quan trọng để dứt điểm lỗi InvalidByte:
         if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n").strip()
+            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
-        
-        # Mở Sheet bằng ID đã cấu hình
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
-
 # 3. Hàm tính ngày âm lịch
 def get_lunar_now():
     now = datetime.now()
