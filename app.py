@@ -10,18 +10,19 @@ st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="�
 
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
 def get_solar_from_lunar(lunar_day, lunar_month):
-    now = datetime.now()
-    # Tính cho năm hiện tại
-    lunar_date = Lunar(now.year, lunar_month, lunar_day)
-    solar_date = Converter.LunarToSolar(lunar_date)
-    dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
-    
-    # Nếu ngày đó đã qua, tính cho năm sau
-    if (dt_solar.date() - now.date()).days < 0:
-        lunar_date = Lunar(now.year + 1, lunar_month, lunar_day)
+    try:
+        now = datetime.now()
+        lunar_date = Lunar(now.year, lunar_month, lunar_day)
         solar_date = Converter.LunarToSolar(lunar_date)
         dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
-    return dt_solar
+        
+        if (dt_solar.date() - now.date()).days < 0:
+            lunar_date = Lunar(now.year + 1, lunar_month, lunar_day)
+            solar_date = Converter.LunarToSolar(lunar_date)
+            dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
+        return dt_solar
+    except:
+        return None
 
 def send_telegram(message):
     try:
@@ -39,7 +40,6 @@ def get_sheet():
         return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except: return None
 
-# --- GIAO DIỆN ---
 if "password_correct" not in st.session_state:
     st.subheader("🔒 Đăng nhập")
     pw = st.text_input("Mật khẩu:", type="password")
@@ -58,7 +58,6 @@ else:
 
         for index, row in df.iterrows():
             try:
-                # Xử lý cắt chuỗi ngày tháng
                 day, month = map(int, str(row['Ngày']).split('/'))
                 if "Âm lịch" in str(row['Loại']):
                     event_date = get_solar_from_lunar(day, month)
@@ -67,13 +66,17 @@ else:
                     if (event_date.date() - now.date()).days < 0:
                         event_date = datetime(now.year + 1, month, day)
                 
-                diff = (event_date.date() - now.date()).days
-                days_left_list.append(diff)
-                
-                if diff == 3:
-                    send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày!")
+                if event_date:
+                    diff = (event_date.date() - now.date()).days
+                    days_left_list.append(diff)
+                    if diff == 3:
+                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày nữa!")
+                else:
+                    days_left_list.append(999) # Giá trị tạm nếu lỗi
             except:
-                days_left_list.append("Lỗi định dạng")
+                days_left_list.append(999)
 
         df['Số ngày sắp đến'] = days_left_list
-        st.dataframe(df.sort_values(by='Số ngày sắp đến'), width='stretch')
+        # Sắp xếp để những ngày gần nhất (số nhỏ) hiện lên đầu
+        df_sorted = df.sort_values(by='Số ngày sắp đến')
+        st.dataframe(df_sorted, width='stretch')
