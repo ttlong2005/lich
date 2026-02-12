@@ -4,8 +4,17 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import requests
+from khamphi.lunar import LunarDate # Thư viện chuyển đổi lịch Việt
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅")
+
+# --- HÀM CHUYỂN ÂM LỊCH SANG DƯƠNG LỊCH ---
+def get_solar_from_lunar(lunar_day, lunar_month, is_next_year=False):
+    now = datetime.now()
+    year = now.year if not is_next_year else now.year + 1
+    # Chuyển từ ngày Âm sang ngày Dương của năm tương ứng
+    solar = LunarDate(year, lunar_month, lunar_day).to_solar_date()
+    return datetime(solar.year, solar.month, solar.day)
 
 # --- HÀM GỬI TELEGRAM ---
 def send_telegram(message):
@@ -18,20 +27,16 @@ def send_telegram(message):
     except:
         pass
 
-# --- HÀM KẾT NỐI GOOGLE SHEETS ---
 def get_sheet():
     try:
         info = dict(st.secrets["service_account"])
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(info, scopes=scope)
-        client = gspread.authorize(creds)
-        return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+        creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối: {str(e)}")
         return None
 
-# --- GIAO DIỆN CHÍNH ---
 if "password_correct" not in st.session_state:
     st.subheader("🔒 Đăng nhập hệ thống")
     pw = st.text_input("Mật khẩu:", type="password")
@@ -50,45 +55,39 @@ else:
         df = pd.DataFrame(data)
         now = datetime.now()
 
-        # --- XỬ LÝ DỮ LIỆU & TÍNH SỐ NGÀY SẮP ĐẾN ---
         days_left_list = []
         for index, row in df.iterrows():
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
-                event_date = datetime(now.year, month, day)
                 
-                # Nếu ngày sự kiện đã qua trong năm nay, tính cho năm sau
-                if (event_date - now).days < -1:
-                    event_date = datetime(now.year + 1, month, day)
+                if row['Loại'] == 'Âm lịch':
+                    # Tính ngày Dương ứng với ngày Âm năm nay
+                    event_date = get_solar_from_lunar(day, month)
+                    # Nếu ngày đó đã qua quá 1 ngày, tính cho năm sau
+                    if (event_date - now).days < -1:
+                        event_date = get_solar_from_lunar(day, month, is_next_year=True)
+                else:
+                    # Tính theo Dương lịch bình thường
+                    event_date = datetime(now.year, month, day)
+                    if (event_date - now).days < -1:
+                        event_date = datetime(now.year + 1, month, day)
                 
                 diff = (event_date - now).days + 1
                 days_left_list.append(diff)
                 
                 # GỬI THÔNG BÁO CỤ THỂ KHI CÁCH ĐÚNG 3 NGÀY
                 if diff == 3:
+                    loai_lich = "🌙 Âm lịch" if row['Loại'] == 'Âm lịch' else "☀️ Dương lịch"
                     msg = (f"🔔 *NHẮC NHỞ SỰ KIỆN SẮP ĐẾN*\n"
                            f"📌 *Sự kiện:* {row['Tên']}\n"
-                           f"📅 *Ngày diễn ra:* {row['Ngày']}\n"
-                           f"⏳ *Còn lại:* 3 ngày nữa")
+                           f"📅 *Ngày:* {row['Ngày']} ({loai_lich})\n"
+                           f"⏳ *Còn lại:* 3 ngày nữa (Ngày dương: {event_date.strftime('%d/%m/%Y')})")
                     send_telegram(msg)
             except:
                 days_left_list.append(None)
 
         df['Số ngày sắp đến'] = days_left_list
-
-        # --- HIỂN THỊ ---
-        st.subheader("📢 Nhật ký thông báo")
-        upcoming = df[df['Số ngày sắp đến'] == 3]
-        if not upcoming.empty:
-            for _, r in upcoming.iterrows():
-                st.info(f"🚀 Đã gửi Telegram báo sắp đến ngày: **{r['Tên']}** ({r['Ngày']})")
-        else:
-            st.write("Hôm nay chưa có sự kiện nào cần báo (chỉ báo khi cách đúng 3 ngày).")
-
-        st.write("---")
         st.subheader("📋 Danh sách sự kiện")
-        
-        # Làm đẹp bảng hiển thị
         st.dataframe(df.sort_values(by='Số ngày sắp đến'), use_container_width=True)
 
         with st.expander("➕ Thêm sự kiện mới"):
@@ -101,5 +100,5 @@ else:
             if st.button("Lưu sự kiện"):
                 if name and date_input:
                     sheet.append_row([name, date_input, etype])
-                    st.success("Đã lưu thành công!")
+                    st.success("Đã lưu!")
                     st.rerun()
