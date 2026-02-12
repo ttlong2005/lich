@@ -12,34 +12,18 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # 2. Hàm kết nối (Phiên bản đặc biệt chống lỗi InvalidByte)
 def get_sheet():
     try:
-        # Lấy thông tin từ Secrets
-        creds_info = dict(st.secrets["gcp_service_account"])
+        # Lấy info từ secrets
+        info = dict(st.secrets["gcp_service_account"])
+        # Làm sạch mã khóa (Xóa khoảng trắng và ký tự lạ)
+        if "private_key" in info:
+            info["private_key"] = info["private_key"].strip().replace("\\n", "\n")
         
-        if "private_key" in creds_info:
-            pk = creds_info["private_key"]
-            # Bước A: Xử lý dấu xuống dòng văn bản
-            pk = pk.replace("\\n", "\n")
-            
-            # Bước B: Tách phần đầu/cuối và phần lõi mã hóa
-            header = "-----BEGIN PRIVATE KEY-----"
-            footer = "-----END PRIVATE KEY-----"
-            
-            if header in pk and footer in pk:
-                # Lấy phần nội dung nằm giữa BEGIN và END
-                core = pk.split(header)[1].split(footer)[0]
-                # CHÍNH XÁC: Loại bỏ hoàn toàn mọi ký tự lạ (khoảng trắng, xuống dòng rác)
-                core = "".join(core.split())
-                # Ghép lại thành cấu hình chuẩn của Google
-                clean_pk = f"{header}\n{core}\n{footer}"
-                creds_info["private_key"] = clean_pk
-            
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        creds = Credentials.from_service_account_info(info, scopes=scope)
         client = gspread.authorize(creds)
-        
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {str(e)}")
+        st.error(f"Lỗi kết nối Robot: {e}")
         return None
 
 # 3. Hàm tính ngày âm lịch
