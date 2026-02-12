@@ -1,25 +1,35 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from vnlunar import LunarDate
 import gspread
 from google.oauth2.service_account import Credentials
 
+# Cấu hình trang
+st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
+
+# Kết nối Google Sheets
 def get_sheet():
-    # Cách lấy thông tin Robot từ định dạng TOML của Streamlit
-    creds_info = st.secrets["gcp_service_account"]
-    creds = Credentials.from_service_account_info(creds_info)
-    client = gspread.authorize(creds)
-    return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+    try:
+        scope = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds_info = st.secrets["gcp_service_account"]
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        client = gspread.authorize(creds)
+        return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+    except Exception as e:
+        st.error(f"Lỗi kết nối Robot: {e}")
+        return None
 
-# ... (Các phần code main và login anh giữ nguyên như cũ) ...
-
-st.set_page_config(page_title="Lịch Gia Đình Tự Động", page_icon="📅")
+def get_lunar_now():
+    now = datetime.now()
+    lunar = LunarDate.from_solar_date(now.year, now.month, now.day)
+    return f"{lunar.day}/{lunar.month}"
 
 def check_password():
     if "password_correct" not in st.session_state:
-        st.subheader("🔒 Đăng nhập hệ thống")
+        st.subheader("🔒 Đăng nhập")
         pw = st.text_input("Mật khẩu:", type="password")
-        if st.button("Vào app"):
+        if st.button("Vào hệ thống"):
             if pw == st.secrets["password"]:
                 st.session_state.password_correct = True
                 st.rerun()
@@ -31,9 +41,15 @@ def check_password():
 def main():
     st.title("📅 Quản Lý Sự Kiện Tự Động")
     sheet = get_sheet()
-    
-    # --- PHẦN THÊM MỚI ---
-    with st.expander("➕ Thêm sự kiện mới (Tự động lưu)", expanded=True):
+    if sheet is None: return
+
+    # Hiển thị ngày hôm nay
+    now = datetime.now()
+    lunar_now = get_lunar_now()
+    st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {lunar_now}")
+
+    # Thêm sự kiện
+    with st.expander("➕ Thêm sự kiện mới", expanded=True):
         name = st.text_input("Tên sự kiện:")
         col1, col2 = st.columns(2)
         with col1:
@@ -49,18 +65,16 @@ def main():
 
         if st.button("🚀 Lưu vĩnh viễn"):
             if name:
-                # Robot tự động chèn thêm 1 dòng vào cuối Sheet
                 sheet.append_row([name, final_date, etype])
-                st.success(f"Đã lưu '{name}' vào Google Sheets!")
+                st.success("Đã lưu vào Google Sheets!")
                 st.rerun()
 
-    # --- PHẦN HIỂN THỊ ---
+    # Hiển thị danh sách
     st.write("---")
-    st.subheader("🔔 Danh sách từ Google Sheets")
+    st.subheader("🔔 Danh sách đã lưu")
     data = sheet.get_all_records()
     if data:
-        df = pd.DataFrame(data)
-        st.table(df)
+        st.table(pd.DataFrame(data))
     else:
         st.write("Chưa có dữ liệu.")
 
