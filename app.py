@@ -6,25 +6,32 @@ from google.oauth2.service_account import Credentials
 import base64
 import json
 
-# --- CẤU HÌNH ---
+# 1. Cấu hình trang
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
+# 2. Kết nối Google Sheets
 def get_sheet():
     try:
+        # Lấy từ Secrets và làm sạch
         b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
+        # Giải mã
         json_data = base64.b64decode(b64_str).decode('utf-8')
         creds_info = json.loads(json_data)
+        
+        # Xử lý ký tự xuống dòng của Private Key
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-        
+            
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
+        
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {str(e)}")
+        st.error(f"Lỗi hệ thống: {str(e)}")
         return None
 
+# 3. Kiểm tra mật khẩu (Sửa lỗi KeyError)
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập hệ thống")
@@ -38,7 +45,7 @@ def check_password():
         return False
     return True
 
-# --- GIAO DIỆN ---
+# 4. Giao diện chính
 if check_password():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
@@ -64,7 +71,7 @@ if check_password():
             if st.button("🚀 Lưu vào lịch"):
                 if name:
                     sheet.append_row([name, final_date, etype])
-                    st.success("Đã lưu!")
+                    st.success("Đã lưu thành công!")
                     st.rerun()
 
         st.write("---")
