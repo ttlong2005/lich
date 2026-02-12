@@ -11,12 +11,15 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # 2. Hàm kết nối Google Sheets
 def get_sheet():
     try:
-        # Lấy thông tin từ Secrets
+        # Đọc trực tiếp nhóm thông tin Robot
         creds_info = dict(st.secrets["gcp_service_account"])
         
-        # Dòng cực kỳ quan trọng để dứt điểm lỗi InvalidByte:
+        # Tự động dọn dẹp chìa khóa (quan trọng nhất)
         if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+            pk = creds_info["private_key"]
+            # Xóa các dấu nháy thừa nếu có và sửa lỗi xuống dòng
+            pk = pk.strip('"').replace("\\n", "\n")
+            creds_info["private_key"] = pk
             
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
