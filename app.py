@@ -12,16 +12,15 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 def get_sheet():
     try:
         scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        # Quan trọng: Chuyển Secrets sang Dictionary để chỉnh sửa được
-        creds_info = dict(st.secrets["gcp_service_account"])
+        # Chuyển secrets sang dạng dictionary để xử lý
+        info = dict(st.secrets["gcp_service_account"])
         
-        # Sửa lỗi PEM bằng cách hoàn tác các ký tự xuống dòng ảo
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+        # Sửa lỗi PEM: Chuyển chuỗi \n thành dấu xuống dòng thật
+        if "private_key" in info:
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
             
-        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        creds = Credentials.from_service_account_info(info, scopes=scope)
         client = gspread.authorize(creds)
-        # Mở bằng ID đã khai báo trong Secrets
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {e}")
@@ -35,13 +34,13 @@ def get_lunar_now():
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập")
-        pw = st.text_input("Mật khẩu của anh:", type="password")
+        pw = st.text_input("Mật khẩu:", type="password")
         if st.button("Vào hệ thống"):
             if pw == st.secrets["password"]:
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-                st.error("Sai mật khẩu rồi anh ơi!")
+                st.error("Sai mật khẩu!")
         return False
     return True
 
@@ -52,11 +51,8 @@ def main():
 
     # Hiển thị ngày hôm nay
     now = datetime.now()
-    try:
-        lunar_now = get_lunar_now()
-        st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {lunar_now}")
-    except:
-        st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')}")
+    lunar_now = get_lunar_now()
+    st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {lunar_now}")
 
     # Thêm sự kiện
     with st.expander("➕ Thêm sự kiện mới", expanded=True):
@@ -76,22 +72,20 @@ def main():
         if st.button("🚀 Lưu vĩnh viễn"):
             if name:
                 sheet.append_row([name, final_date, etype])
-                st.success(f"Đã lưu '{name}' thành công!")
+                st.success("Đã lưu thành công!")
                 st.rerun()
 
     # Hiển thị danh sách
     st.write("---")
     st.subheader("🔔 Danh sách đã lưu")
-    data = sheet.get_all_records()
-    if data:
-        st.table(pd.DataFrame(data))
-    else:
-        st.write("Chưa có dữ liệu trong Google Sheets.")
-        
-    # Nút đăng xuất
-    if st.sidebar.button("Đăng xuất"):
-        del st.session_state.password_correct
-        st.rerun()
+    try:
+        data = sheet.get_all_records()
+        if data:
+            st.table(pd.DataFrame(data))
+        else:
+            st.write("Chưa có dữ liệu.")
+    except:
+        st.write("Đang tải dữ liệu...")
 
 if check_password():
     main()
