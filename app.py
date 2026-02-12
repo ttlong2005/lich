@@ -13,13 +13,13 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # 2. Hàm kết nối Google Sheets
 def get_sheet():
     try:
-        # Lấy chuỗi từ Secrets và dọn dẹp ký tự lạ
-        raw_b64 = st.secrets["google_key_base64"].strip()
-        # Giải mã
-        json_data = base64.b64decode(raw_b64).decode('utf-8')
-        creds_info = json.loads(json_data)
+        # 1. Đọc trực tiếp nội dung JSON từ Secrets
+        json_str = st.secrets["google_key_json"]
         
-        # Xử lý ký tự xuống dòng cho Google
+        # 2. Chuyển nội dung đó thành Dictionary (kiểu dữ liệu Python hiểu)
+        creds_info = json.loads(json_str)
+        
+        # 3. Xử lý lại dấu xuống dòng trong mã khóa (để gspread không bị lỗi)
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
@@ -27,6 +27,7 @@ def get_sheet():
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
         
+        # Mở Sheet bằng ID từ Secrets
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
