@@ -2,4 +2,4 @@ streamlit
 gspread
 google-auth
 requests
-lunarcalendar
+lunar-python
