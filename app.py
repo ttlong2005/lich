@@ -14,14 +14,16 @@ import json
 
 def get_sheet():
     try:
-        # 1. Lấy chuỗi an toàn từ Secrets
-        b64_str = st.secrets["google_key_base64"]
+        # 1. Lấy chuỗi và dọn dẹp sạch sẽ khoảng trắng/xuống dòng dư thừa
+        b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
         
-        # 2. Giải mã ngược lại thành JSON chuẩn
+        # 2. Giải mã Base64
         json_data = base64.b64decode(b64_str).decode('utf-8')
+        
+        # 3. Chuyển thành Dictionary
         creds_info = json.loads(json_data)
         
-        # 3. Sửa lỗi ký tự xuống dòng (luôn cần thiết cho Google)
+        # 4. Xử lý ký tự xuống dòng trong private_key (Cực kỳ quan trọng)
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
             
@@ -29,7 +31,6 @@ def get_sheet():
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
         
-        # Mở Sheet bằng ID
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
