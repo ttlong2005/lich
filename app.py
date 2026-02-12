@@ -1,58 +1,73 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
+import requests
 
 st.set_page_config(page_title="Quản Lý Sự Kiện", page_icon="📅")
 
+# Hàm gửi tin nhắn Telegram
+def send_telegram(message):
+    token = st.secrets["telegram_token"]
+    chat_id = st.secrets["telegram_chat_id"]
+    url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
+    try:
+        requests.get(url)
+    except:
+        pass
+
 def get_sheet():
     try:
-        # Đọc trực tiếp từ cấu hình service_account trong Secrets
         info = dict(st.secrets["service_account"])
-        
-        # Xử lý quan trọng: Biến chuỗi \n thành ký tự xuống dòng thực sự
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(info, scopes=scope)
         client = gspread.authorize(creds)
-        
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.subheader("🔒 Đăng nhập hệ thống")
-        pw = st.text_input("Mật khẩu:", type="password")
-        if st.button("Vào hệ thống"):
-            if pw == st.secrets["password"]:
-                st.session_state.password_correct = True
-                st.rerun()
-            else:
-                st.error("Sai mật khẩu!")
-        return False
-    return True
-
-if check_password():
+if "password_correct" not in st.session_state:
+    st.subheader("🔒 Đăng nhập hệ thống")
+    pw = st.text_input("Mật khẩu:", type="password")
+    if st.button("Vào hệ thống"):
+        if pw == st.secrets["password"]:
+            st.session_state.password_correct = True
+            st.rerun()
+        else:
+            st.error("Sai mật khẩu!")
+else:
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
     
     if sheet:
-        st.success("✅ Kết nối Google Sheets thành công!")
-        # Hiển thị dữ liệu
-        try:
-            data = sheet.get_all_records()
-            if data:
-                st.dataframe(pd.DataFrame(data))
-            else:
-                st.info("Chưa có sự kiện nào trong danh sách.")
-        except Exception as e:
-            st.warning("Sheet trống hoặc chưa có tiêu đề (Tên, Ngày, Loại).")
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        # --- LOGIC KIỂM TRA VÀ GỬI THÔNG BÁO ---
+        now = datetime.now()
+        for index, row in df.iterrows():
+            try:
+                # Giả định định dạng ngày trong sheet là DD/MM
+                event_date_str = row['Ngày'] + f"/{now.year}"
+                event_date = datetime.strptime(event_date_str, "%d/%m/%Y")
+                
+                # Tính khoảng cách ngày
+                diff = (event_date - now).days + 1
+                
+                # Nếu cách đúng 3 ngày thì gửi thông báo
+                if diff == 3:
+                    msg = f"🔔 THÔNG BÁO: Sự kiện '{row['Tên']}' sẽ diễn ra sau 3 ngày nữa ({row['Ngày']})!"
+                    send_telegram(msg)
+                    st.info(f"🚀 Đã gửi thông báo Telegram cho sự kiện: {row['Tên']}")
+            except:
+                continue
+        
+        st.success("✅ Đã kiểm tra lịch và gửi thông báo nếu có sự kiện sắp tới.")
+        st.dataframe(df)
 
-        # Form thêm sự kiện đơn giản
         with st.expander("➕ Thêm sự kiện mới"):
             name = st.text_input("Tên sự kiện:")
             date = st.text_input("Ngày (VD: 15/01):")
