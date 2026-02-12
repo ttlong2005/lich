@@ -1,21 +1,24 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import requests
 
 st.set_page_config(page_title="Quản Lý Sự Kiện", page_icon="📅")
 
-# Hàm gửi tin nhắn Telegram
+# --- HÀM GỬI TELEGRAM (CÓ HIỂN THỊ LỖI ĐỂ KIỂM TRA) ---
 def send_telegram(message):
-    token = st.secrets["telegram_token"]
-    chat_id = st.secrets["telegram_chat_id"]
-    url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={message}"
     try:
-        requests.get(url)
-    except:
-        pass
+        token = st.secrets["telegram_token"]
+        chat_id = st.secrets["telegram_chat_id"]
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message}
+        response = requests.post(url, data=payload)
+        return response.json()
+    except Exception as e:
+        st.error(f"Lỗi gửi Telegram: {e}")
+        return None
 
 def get_sheet():
     try:
@@ -29,6 +32,7 @@ def get_sheet():
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
+# --- GIAO DIỆN CHÍNH ---
 if "password_correct" not in st.session_state:
     st.subheader("🔒 Đăng nhập hệ thống")
     pw = st.text_input("Mật khẩu:", type="password")
@@ -46,34 +50,49 @@ else:
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # --- LOGIC KIỂM TRA VÀ GỬI THÔNG BÁO ---
+        # --- NÚT BẤM TEST THỬ TELEGRAM NGAY LẬP TỨC ---
+        if st.button("🚀 Bấm vào đây để Test gửi Telegram thử"):
+            res = send_telegram("🔔 Tin nhắn thử nghiệm từ App Lịch Gia Đình! Nếu anh thấy tin này nghĩa là cấu hình đã ĐÚNG.")
+            if res and res.get("ok"):
+                st.success("✅ Telegram báo 'OK'! Anh kiểm tra điện thoại nhé.")
+            else:
+                st.error(f"❌ Telegram báo lỗi: {res}")
+
+        st.write("---")
+        
+        # --- LOGIC THÔNG BÁO TỰ ĐỘNG ---
         now = datetime.now()
+        upcoming_found = False
+        
         for index, row in df.iterrows():
             try:
-                # Giả định định dạng ngày trong sheet là DD/MM
-                event_date_str = row['Ngày'] + f"/{now.year}"
-                event_date = datetime.strptime(event_date_str, "%d/%m/%Y")
+                # Ép kiểu ngày từ Sheet (giả sử là 27/12) thành ngày của năm hiện tại
+                day, month = map(int, str(row['Ngày']).split('/'))
+                event_date = datetime(now.year, month, day)
                 
-                # Tính khoảng cách ngày
+                # Tính khoảng cách
                 diff = (event_date - now).days + 1
                 
-                # Nếu cách đúng 3 ngày thì gửi thông báo
-                if diff == 3:
-                    msg = f"🔔 THÔNG BÁO: Sự kiện '{row['Tên']}' sẽ diễn ra sau 3 ngày nữa ({row['Ngày']})!"
+                # TEST: Nếu trong vòng 7 ngày tới thì thông báo luôn để anh dễ thấy
+                if 0 <= diff <= 7:
+                    msg = f"🔔 SẮP ĐẾN: '{row['Tên']}' còn {diff} ngày nữa là đến ({row['Ngày']})!"
                     send_telegram(msg)
-                    st.info(f"🚀 Đã gửi thông báo Telegram cho sự kiện: {row['Tên']}")
+                    st.info(f"📤 Đã tự động gửi thông báo cho: {row['Tên']}")
+                    upcoming_found = True
             except:
                 continue
         
-        st.success("✅ Đã kiểm tra lịch và gửi thông báo nếu có sự kiện sắp tới.")
+        if not upcoming_found:
+            st.write("Hiện tại không có sự kiện nào trong 7 ngày tới.")
+
         st.dataframe(df)
 
         with st.expander("➕ Thêm sự kiện mới"):
             name = st.text_input("Tên sự kiện:")
-            date = st.text_input("Ngày (VD: 15/01):")
+            date_input = st.text_input("Ngày (VD: 15/01):")
             etype = st.selectbox("Loại:", ["Dương lịch", "Âm lịch"])
             if st.button("Lưu"):
-                if name and date:
-                    sheet.append_row([name, date, etype])
-                    st.success("Đã thêm!")
+                if name and date_input:
+                    sheet.append_row([name, date_input, etype])
+                    st.success("Đã thêm thành công!")
                     st.rerun()
