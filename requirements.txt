@@ -1,3 +1,5 @@
 streamlit
 pandas
 vnlunar
+gspread
+google-oauth2-toolbelt
