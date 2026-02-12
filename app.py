@@ -3,42 +3,31 @@ import pandas as pd
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
-import base64
-import json
 
 # --- CẤU HÌNH ---
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
 def get_sheet():
     try:
-        # 1. Lấy chuỗi và dọn dẹp ký tự thừa
-        b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
-        
-        # 2. Tự động sửa lỗi padding (Thêm dấu = nếu thiếu)
-        b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
-        
-        # 3. Giải mã
-        json_data = base64.b64decode(b64_str).decode('utf-8')
-        creds_info = json.loads(json_data)
-        
-        # 4. Xử lý ký tự xuống dòng của Google
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+        # Gom thông tin từ Secrets thành cấu hình Robot
+        creds_info = {
+            "type": "service_account",
+            "project_id": st.secrets["project_id"],
+            "private_key_id": st.secrets["private_key_id"],
+            "private_key": st.secrets["private_key"].replace("\\n", "\n"),
+            "client_email": st.secrets["client_email"],
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
         
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi hệ thống: {str(e)}")
+        st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
 def check_password():
-    # Kiểm tra xem có mục password trong secrets không để tránh lỗi KeyError
-    if "password" not in st.secrets:
-        st.error("Chưa cấu hình mật khẩu trong Secrets!")
-        return False
-        
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập hệ thống")
         pw = st.text_input("Mật khẩu:", type="password")
@@ -51,7 +40,7 @@ def check_password():
         return False
     return True
 
-# --- GIAO DIỆN CHÍNH ---
+# --- GIAO DIỆN ---
 if check_password():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
