@@ -46,7 +46,7 @@ def get_sheet():
         return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except: return None
 
-# --- GIAO DIỆN ---
+# --- GIAO DIỆN CHÍNH ---
 if "password_correct" not in st.session_state:
     st.subheader("🔒 Đăng nhập")
     pw = st.text_input("Mật khẩu:", type="password")
@@ -54,22 +54,21 @@ if "password_correct" not in st.session_state:
         if pw == st.secrets["password"]:
             st.session_state.password_correct = True
             st.rerun()
+        else:
+            st.error("Sai mật khẩu!")
 else:
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     
-    # --- HIỂN THỊ NGÀY HÔM NAY (MỚI) ---
+    # --- HIỂN THỊ NGÀY HÔM NAY ---
     now = datetime.now()
-    solar_now = Solar.fromDate(now)
     lunar_now = Lunar.fromDate(now)
+    tiet_khi = lunar_now.getJieQi()
     
-# Lấy tên năm tiếng Việt (ví dụ: Ất Tỵ) thay vì ký tự Hán
-nam_can_chi = f"{lunar_now.getYearInGanZhi()} ({lunar_now.getYear()})"
-tiet_khi = lunar_now.getJieQi()
-
-st.info(f"""
-📅 **Dương lịch:** {now.strftime('%d/%m/%Y')}  
-🌙 **Âm lịch:** Ngày **{lunar_now.getDay()}/{lunar_now.getMonth()}** - Năm **{lunar_now.getYearInGanZhi()}** 🎋 **Tiết khí:** {tiet_khi}
-""")
+    # Hiển thị thông tin ngày tháng trong ô màu xanh
+    st.info(f"""
+    📅 **Dương lịch:** {now.strftime('%d/%m/%Y')}  
+    🌙 **Âm lịch:** Ngày **{lunar_now.getDay()}/{lunar_now.getMonth()}** - Năm **{lunar_now.getYearInGanZhi()}** 🎋 **Tiết khí:** {tiet_khi}
+    """)
 
     sheet = get_sheet()
     if sheet:
@@ -79,6 +78,7 @@ st.info(f"""
 
         for index, row in df.iterrows():
             try:
+                # Xử lý cắt chuỗi ngày tháng
                 day, month = map(int, str(row['Ngày']).split('/'))
                 
                 if "Âm lịch" in str(row['Loại']):
@@ -92,24 +92,38 @@ st.info(f"""
                     diff = (event_date.date() - now.date()).days
                     days_left_list.append(diff)
                     
+                    # Tự động gửi Telegram khi còn đúng 3 ngày
                     if diff == 3:
-                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày nữa!")
+                        loai = "Âm" if "Âm lịch" in str(row['Loại']) else "Dương"
+                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']} {loai}) còn 3 ngày nữa!")
                 else:
                     days_left_list.append(None)
             except:
                 days_left_list.append(None)
 
         df['Số ngày sắp đến'] = days_left_list
+        
         st.subheader("📋 Danh sách sự kiện")
+        # Sắp xếp danh sách theo ngày gần nhất
         df_display = df.sort_values(by='Số ngày sắp đến', ascending=True)
         st.dataframe(df_display, use_container_width=True)
 
+        # Nút bấm để Test gửi Telegram thủ công cho sự kiện sắp tới
+        if st.button("🚀 Test gửi Telegram ngay bây giờ"):
+            upcoming = df[df['Số ngày sắp đến'] <= 7] # Tìm các sự kiện trong 7 ngày tới
+            if not upcoming.empty:
+                for _, r in upcoming.iterrows():
+                    send_telegram(f"⚡ *TEST NHẮC NHỞ:* {r['Tên']} ({r['Ngày']}) còn {r['Số ngày sắp đến']} ngày!")
+                st.success("Đã gửi tin nhắn test cho các sự kiện sắp tới!")
+            else:
+                st.warning("Không có sự kiện nào trong 7 ngày tới để test.")
+
         with st.expander("➕ Thêm sự kiện mới"):
-            name = st.text_input("Tên:")
+            name = st.text_input("Tên sự kiện:")
             d_input = st.text_input("Ngày (VD: 27/12):")
-            l_input = st.selectbox("Loại:", ["Dương lịch", "Âm lịch"])
-            if st.button("Lưu"):
+            l_input = st.selectbox("Loại lịch:", ["Dương lịch", "Âm lịch"])
+            if st.button("Lưu vào Google Sheets"):
                 if name and d_input:
                     sheet.append_row([name, d_input, l_input])
-                    st.success("Đã lưu!")
+                    st.success("Đã lưu thành công!")
                     st.rerun()
