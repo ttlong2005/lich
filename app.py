@@ -4,39 +4,41 @@ from datetime import datetime
 from vnlunar import LunarDate
 import gspread
 from google.oauth2.service_account import Credentials
-import re
 
-# 1. Cấu hình trang
+# Cấu hình trang
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
-# 2. Hàm kết nối (Phiên bản đặc biệt chống lỗi InvalidByte)
 def get_sheet():
     try:
-        # Lấy info từ secrets
-        info = dict(st.secrets["gcp_service_account"])
-        # Làm sạch mã khóa (Xóa khoảng trắng và ký tự lạ)
-        if "private_key" in info:
-            info["private_key"] = info["private_key"].strip().replace("\\n", "\n")
+        # 1. Đọc dữ liệu từ Secrets
+        creds_info = dict(st.secrets["gcp_service_account"])
         
+        # 2. VỆ SINH MÃ KHÓA: Loại bỏ ký tự rác ẩn
+        if "private_key" in creds_info:
+            pk = creds_info["private_key"]
+            # Chuyển đổi định dạng xuống dòng và xóa khoảng trắng thừa
+            pk = pk.replace("\\n", "\n").strip()
+            creds_info["private_key"] = pk
+            
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(info, scopes=scope)
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
+        
+        # 3. Mở Sheet bằng ID
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {e}")
+        st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
-# 3. Hàm tính ngày âm lịch
 def get_lunar_now():
     now = datetime.now()
     lunar = LunarDate.from_solar_date(now.year, now.month, now.day)
     return f"{lunar.day}/{lunar.month}"
 
-# 4. Kiểm tra mật khẩu
 def check_password():
     if "password_correct" not in st.session_state:
-        st.subheader("🔒 Đăng nhập hệ thống")
-        pw = st.text_input("Nhập mật khẩu:", type="password")
+        st.subheader("🔒 Đăng nhập")
+        pw = st.text_input("Mật khẩu:", type="password")
         if st.button("Vào hệ thống"):
             if pw == st.secrets["password"]:
                 st.session_state.password_correct = True
@@ -46,7 +48,6 @@ def check_password():
         return False
     return True
 
-# 5. Giao diện chính
 def main():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
@@ -60,7 +61,7 @@ def main():
         name = st.text_input("Tên sự kiện:")
         col1, col2 = st.columns(2)
         with col1:
-            etype = st.radio("Loại ngày:", ["Dương lịch", "Âm lịch"], horizontal=True)
+            etype = st.radio("Loại:", ["Dương lịch", "Âm lịch"], horizontal=True)
         with col2:
             if etype == "Âm lịch":
                 d = st.number_input("Ngày âm", 1, 30, 15)
@@ -70,20 +71,22 @@ def main():
                 dt = st.date_input("Chọn ngày:", value=now)
                 final_date = dt.strftime("%d/%m")
 
-        if st.button("🚀 Lưu vào lịch"):
+        if st.button("🚀 Lưu"):
             if name:
                 sheet.append_row([name, final_date, etype])
                 st.success("Đã lưu thành công!")
                 st.rerun()
 
     st.write("---")
-    st.subheader("🔔 Danh sách đã lưu")
+    st.subheader("🔔 Danh sách sự kiện")
     try:
         data = sheet.get_all_records()
-        if data: st.table(pd.DataFrame(data))
-        else: st.write("Chưa có dữ liệu.")
+        if data:
+            st.table(pd.DataFrame(data))
+        else:
+            st.write("Chưa có dữ liệu.")
     except:
-        st.write("Đang tải dữ liệu...")
+        st.write("Đang tải hoặc bảng trống...")
 
 if check_password():
     main()
