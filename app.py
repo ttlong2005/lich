@@ -8,14 +8,6 @@ from lunar_python import Lunar, Solar
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅", layout="wide")
 
-# --- TỪ ĐIỂN TIẾNG VIỆT ---
-def get_lunar_info_vi(lunar):
-    # Ép thư viện trả về tiếng Việt chuẩn
-    can = lunar.getYearGan()
-    chi = lunar.getYearZhi()
-    # Thư viện đôi khi trả về chữ Hán, mình map lại nếu cần hoặc dùng hàm getYearInGanZhi
-    return f"{lunar.getYearInGanZhiByLiChun()}"
-
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
 def get_solar_from_lunar(lunar_day, lunar_month):
     now = datetime.now()
@@ -36,8 +28,7 @@ def get_sheet():
         info = dict(st.secrets["service_account"])
         info["private_key"] = info["private_key"].replace("\\n", "\n")
         creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
-        client = gspread.authorize(creds)
-        return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+        return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except: return None
 
 # --- GIAO DIỆN ---
@@ -51,15 +42,16 @@ if "password_correct" not in st.session_state:
 else:
     st.title("📅 QUẢN LÝ SỰ KIỆN GIA ĐÌNH")
     
-    # --- KHỐI HIỂN THỊ NGÀY HÔM NAY (MÀU NỔI BẬT) ---
+    # --- HIỂN THỊ NGÀY HÔM NAY ---
     now = datetime.now()
     lunar_now = Lunar.fromDate(now)
+    nam_viet = lunar_now.getYearInGanZhiByLiChun()
     
     st.markdown(f"""
-    <div style="background-color: #1E3A8A; padding: 20px; border-radius: 10px; border-left: 10px solid #F87171; color: white;">
+    <div style="background-color: #1E3A8A; padding: 20px; border-radius: 10px; border-left: 10px solid #F87171; color: white; margin-bottom: 20px;">
         <h2 style="margin:0; color: white;">☀️ Dương lịch: {now.strftime('%d/%m/%Y')}</h2>
-        <h3 style="margin:0; color: #FCD34D;">🌙 Âm lịch: Ngày {lunar_now.getDay()}/{lunar_now.getMonth()} - Năm {lunar_now.getYearInGanZhiByLiChun()}</h3>
-        <p style="margin:0; font-style: italic;">🎋 Tiết khí: {lunar_now.getJieQi() if lunar_now.getJieQi() else "Thanh nhàn"}</p>
+        <h3 style="margin:0; color: #FCD34D;">🌙 Âm lịch: Ngày {lunar_now.getDay()}/{lunar_now.getMonth()} - Năm {nam_viet}</h3>
+        <p style="margin:0; font-style: italic;">🎋 Tiết khí: {lunar_now.getJieQi() if lunar_now.getJieQi() else "Bình thường"}</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -68,9 +60,7 @@ else:
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Thêm cột index để dễ xóa/sửa
-        df['ID'] = range(2, len(df) + 2) 
-        
+        # Tính toán số ngày sắp đến
         days_left_list = []
         for index, row in df.iterrows():
             try:
@@ -88,53 +78,58 @@ else:
         df['Sắp đến (ngày)'] = days_left_list
         df = df.sort_values(by='Sắp đến (ngày)')
 
-        # --- TÔ MÀU BẢNG DANH SÁCH ---
+        # --- BẢNG DANH SÁCH SỰ KIỆN ---
         st.subheader("📋 Danh sách sự kiện")
         
-        def highlight_urgent(row):
-            if row['Sắp đến (ngày)'] <= 7:
-                return ['background-color: #FFE4E6; color: #BE123C; font-weight: bold'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(df.style.apply(highlight_urgent, axis=1), use_container_width=True)
-
-        # --- CHỨC NĂNG SỬA / XÓA ---
-        st.write("---")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("➕ Thêm sự kiện")
-            with st.form("add_form", clear_on_submit=True):
-                new_name = st.text_input("Tên sự kiện:")
-                new_date = st.text_input("Ngày (VD: 27/12):")
-                new_type = st.selectbox("Loại:", ["Âm lịch", "Dương lịch"])
-                if st.form_submit_button("Lưu mới"):
-                    if new_name and new_date:
-                        sheet.append_row([new_name, new_date, new_type])
-                        st.success("Đã thêm!")
-                        st.rerun()
-
-        with col2:
-            st.subheader("🗑️ Xóa sự kiện")
-            event_to_delete = st.selectbox("Chọn sự kiện muốn xóa:", df['Tên'].tolist())
-            if st.button("Xác nhận Xóa"):
-                # Tìm dòng dựa trên tên
-                cell = sheet.find(event_to_delete)
-                sheet.delete_rows(cell.row)
-                st.warning(f"Đã xóa {event_to_delete}")
-                st.rerun()
-
-        # Chức năng Sửa nhanh
-        with st.expander("📝 Sửa tên hoặc ngày sự kiện"):
-            event_to_edit = st.selectbox("Chọn sự kiện muốn sửa:", df['Tên'].tolist(), key="edit_box")
-            edit_name = st.text_input("Tên mới:", value=event_to_edit)
-            # Lấy ngày cũ làm mặc định
-            old_date = df[df['Tên'] == event_to_edit]['Ngày'].values[0]
-            edit_date = st.text_input("Ngày mới:", value=old_date)
+        # Tạo cột ảo để hiển thị nút mà không làm hỏng DataFrame gốc
+        for index, row in df.iterrows():
+            col_t1, col_t2, col_t3, col_t4, col_b1, col_b2 = st.columns([3, 2, 2, 2, 1, 1])
             
-            if st.button("Cập nhật thay đổi"):
-                cell = sheet.find(event_to_edit)
-                sheet.update_cell(cell.row, 1, edit_name) # Cột 1 là Tên
-                sheet.update_cell(cell.row, 2, edit_date) # Cột 2 là Ngày
-                st.success("Đã cập nhật!")
-                st.rerun()
+            # Tô màu đỏ nếu dưới 7 ngày
+            color = "#BE123C" if row['Sắp đến (ngày)'] <= 7 else "#374151"
+            weight = "bold" if row['Sắp đến (ngày)'] <= 7 else "normal"
+            
+            with col_t1: st.write(f"**{row['Tên']}**")
+            with col_t2: st.write(row['Ngày'])
+            with col_t3: st.write(row['Loại'])
+            with col_t4: st.write(f":red[{row['Sắp đến (ngày)']} ngày]" if row['Sắp đến (ngày)'] <= 7 else f"{row['Sắp đến (ngày)']} ngày")
+            
+            # Nút Xóa
+            with col_b1:
+                if st.button("🗑️", key=f"del_{index}"):
+                    cell = sheet.find(row['Tên'])
+                    sheet.delete_rows(cell.row)
+                    st.toast(f"Đã xóa {row['Tên']}")
+                    st.rerun()
+            
+            # Nút Sửa
+            with col_b2:
+                if st.button("📝", key=f"edit_{index}"):
+                    st.session_state.editing_row = row['Tên']
+            
+            st.divider()
+
+        # --- FORM SỬA (Chỉ hiện khi bấm nút Sửa) ---
+        if "editing_row" in st.session_state:
+            with st.form("edit_form"):
+                st.info(f"Đang sửa sự kiện: {st.session_state.editing_row}")
+                new_name = st.text_input("Tên mới", value=st.session_state.editing_row)
+                new_date = st.text_input("Ngày mới (VD: 27/12)")
+                if st.form_submit_button("Cập nhật"):
+                    cell = sheet.find(st.session_state.editing_row)
+                    sheet.update_cell(cell.row, 1, new_name)
+                    if new_date: sheet.update_cell(cell.row, 2, new_date)
+                    del st.session_state.editing_row
+                    st.success("Đã cập nhật!")
+                    st.rerun()
+
+        # --- THÊM MỚI ---
+        with st.expander("➕ Thêm sự kiện mới"):
+            with st.form("add_new"):
+                n = st.text_input("Tên:")
+                d = st.text_input("Ngày (VD: 15/05):")
+                l = st.selectbox("Loại:", ["Âm lịch", "Dương lịch"])
+                if st.form_submit_button("Lưu"):
+                    if n and d:
+                        sheet.append_row([n, d, l])
+                        st.rerun()
