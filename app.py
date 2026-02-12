@@ -6,33 +6,39 @@ from google.oauth2.service_account import Credentials
 import base64
 import json
 
-# 1. Cấu hình trang
+# --- CẤU HÌNH ---
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
-# 2. Kết nối Google Sheets
 def get_sheet():
     try:
-        # Lấy từ Secrets và làm sạch
+        # 1. Lấy chuỗi và dọn dẹp ký tự thừa
         b64_str = st.secrets["google_key_base64"].strip().replace("\n", "").replace(" ", "")
-        # Giải mã
+        
+        # 2. Tự động sửa lỗi padding (Thêm dấu = nếu thiếu)
+        b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
+        
+        # 3. Giải mã
         json_data = base64.b64decode(b64_str).decode('utf-8')
         creds_info = json.loads(json_data)
         
-        # Xử lý ký tự xuống dòng của Private Key
+        # 4. Xử lý ký tự xuống dòng của Google
         if "private_key" in creds_info:
             creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
-            
+        
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
-        
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi hệ thống: {str(e)}")
         return None
 
-# 3. Kiểm tra mật khẩu (Sửa lỗi KeyError)
 def check_password():
+    # Kiểm tra xem có mục password trong secrets không để tránh lỗi KeyError
+    if "password" not in st.secrets:
+        st.error("Chưa cấu hình mật khẩu trong Secrets!")
+        return False
+        
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Đăng nhập hệ thống")
         pw = st.text_input("Mật khẩu:", type="password")
@@ -45,7 +51,7 @@ def check_password():
         return False
     return True
 
-# 4. Giao diện chính
+# --- GIAO DIỆN CHÍNH ---
 if check_password():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     sheet = get_sheet()
