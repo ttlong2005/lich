@@ -14,21 +14,23 @@ def get_sheet():
         # 1. Đọc dữ liệu từ Secrets
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. XỬ LÝ LỖI INVALID BYTE: Ép ký tự xuống dòng chuẩn xác
+        # 2. VỆ SINH MÃ KHÓA: Loại bỏ rác định dạng
         if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
+            # Xử lý cả dấu xuống dòng thật và dấu \n dạng văn bản
+            pk = creds_dict["private_key"]
+            pk = pk.replace("\\n", "\n") # Biến ký tự \n văn bản thành dấu xuống dòng thật
+            pk = pk.strip()              # Xóa khoảng trắng thừa ở 2 đầu
+            creds_dict["private_key"] = pk
         
-        # 3. Khai báo quyền
+        # 3. Kết nối
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        
-        # 4. Tạo credentials và kết nối
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         
-        # 5. Mở sheet bằng ID từ Secrets
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
         
     except Exception as e:
+        # Nếu vẫn lỗi, nó sẽ hiện thông báo sạch sẽ hơn
         st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
