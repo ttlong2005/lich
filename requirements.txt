@@ -1,5 +1,6 @@
 streamlit
 pandas
-gspread
 google-auth
 vnlunar
+st-gsheets-connection
+gspread
