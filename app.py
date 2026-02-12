@@ -11,17 +11,28 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # Kết nối Google Sheets
 def get_sheet():
     try:
-        # Lấy info từ secrets
-        info = dict(st.secrets["gcp_service_account"])
-        # Làm sạch mã khóa (Xóa khoảng trắng thừa)
-        info["private_key"] = info["private_key"].strip()
+        # 1. Đọc dữ liệu từ Secrets
+        # Lưu ý: gcp_service_account phải khớp với tiêu đề trong ngoặc vuông [] ở Secrets
+        creds_dict = dict(st.secrets["gcp_service_account"])
         
-        scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        creds = Credentials.from_service_account_info(info, scopes=scope)
+        # 2. XỬ LÝ LỖI INVALID BYTE: 
+        # Lệnh này sẽ ép các ký tự xuống dòng về đúng định dạng mà Google yêu cầu
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
+        
+        # 3. Khai báo quyền
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        
+        # 4. Tạo credentials
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
+        
+        # 5. Mở sheet (Dùng ID đã cấu hình trong Secrets)
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
+        
     except Exception as e:
-        st.error(f"Lỗi Robot: {e}")
+        # Hiện lỗi chi tiết để mình biết sai ở đâu
+        st.error(f"Lỗi bước kết nối: {str(e)}")
         return None
 
 def get_lunar_now():
