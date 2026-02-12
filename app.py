@@ -4,25 +4,39 @@ from datetime import datetime
 from vnlunar import LunarDate
 import gspread
 from google.oauth2.service_account import Credentials
+import re
 
 # 1. Cấu hình trang
 st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
-# 2. Hàm kết nối Google Sheets (Đã xử lý lỗi InvalidByte)
+# 2. Hàm kết nối (Phiên bản đặc biệt chống lỗi InvalidByte)
 def get_sheet():
     try:
         # Lấy thông tin từ Secrets
         creds_info = dict(st.secrets["gcp_service_account"])
         
-        # Làm sạch mã khóa để tránh lỗi ký tự lạ (InvalidByte)
         if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n").strip()
+            pk = creds_info["private_key"]
+            # Bước A: Xử lý dấu xuống dòng văn bản
+            pk = pk.replace("\\n", "\n")
+            
+            # Bước B: Tách phần đầu/cuối và phần lõi mã hóa
+            header = "-----BEGIN PRIVATE KEY-----"
+            footer = "-----END PRIVATE KEY-----"
+            
+            if header in pk and footer in pk:
+                # Lấy phần nội dung nằm giữa BEGIN và END
+                core = pk.split(header)[1].split(footer)[0]
+                # CHÍNH XÁC: Loại bỏ hoàn toàn mọi ký tự lạ (khoảng trắng, xuống dòng rác)
+                core = "".join(core.split())
+                # Ghép lại thành cấu hình chuẩn của Google
+                clean_pk = f"{header}\n{core}\n{footer}"
+                creds_info["private_key"] = clean_pk
             
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
         
-        # Mở Sheet bằng ID (Lấy từ Secrets)
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
         st.error(f"Lỗi kết nối Robot: {str(e)}")
@@ -44,26 +58,22 @@ def check_password():
                 st.session_state.password_correct = True
                 st.rerun()
             else:
-                st.error("Sai mật khẩu rồi anh ơi!")
+                st.error("Sai mật khẩu!")
         return False
     return True
 
 # 5. Giao diện chính
 def main():
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
-    
     sheet = get_sheet()
-    if sheet is None:
-        return
+    if sheet is None: return
 
-    # Hiển thị ngày tháng hiện tại
     now = datetime.now()
     lunar_now = get_lunar_now()
     st.info(f"📅 Hôm nay: {now.strftime('%d/%m/%Y')} | 🌙 Âm lịch: {lunar_now}")
 
-    # Phần thêm sự kiện
     with st.expander("➕ Thêm sự kiện mới", expanded=True):
-        name = st.text_input("Tên sự kiện (VD: Giỗ ông nội, Sinh nhật con...):")
+        name = st.text_input("Tên sự kiện:")
         col1, col2 = st.columns(2)
         with col1:
             etype = st.radio("Loại ngày:", ["Dương lịch", "Âm lịch"], horizontal=True)
@@ -78,28 +88,18 @@ def main():
 
         if st.button("🚀 Lưu vào lịch"):
             if name:
-                try:
-                    sheet.append_row([name, final_date, etype])
-                    st.success("Đã lưu thành công vào Google Sheet!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Lỗi khi lưu dữ liệu: {e}")
-            else:
-                st.warning("Anh quên chưa nhập tên sự kiện rồi!")
+                sheet.append_row([name, final_date, etype])
+                st.success("Đã lưu thành công!")
+                st.rerun()
 
-    # Hiển thị danh sách từ Google Sheets
     st.write("---")
-    st.subheader("🔔 Danh sách sự kiện đã lưu")
+    st.subheader("🔔 Danh sách đã lưu")
     try:
         data = sheet.get_all_records()
-        if data:
-            df = pd.DataFrame(data)
-            st.table(df)
-        else:
-            st.write("Hiện chưa có sự kiện nào được lưu.")
-    except Exception as e:
+        if data: st.table(pd.DataFrame(data))
+        else: st.write("Chưa có dữ liệu.")
+    except:
         st.write("Đang tải dữ liệu...")
 
-# Chạy ứng dụng
 if check_password():
     main()
