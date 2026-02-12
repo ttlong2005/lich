@@ -28,19 +28,27 @@ def get_solar_from_lunar(lunar_day, lunar_month):
             lunar = Lunar.fromYmd(y, lunar_month, lunar_day)
             solar = lunar.getSolar()
             dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
-            # Lấy ngày chưa qua hoặc chỉ mới qua hôm nay (>= -1 để giữ ngày hiện tại)
             if (dt_solar.date() - now.date()).days >= -1:
                 potential_dates.append(dt_solar)
         except: continue
     return min(potential_dates) if potential_dates else None
 
+# --- KẾT NỐI GOOGLE SHEETS QUA SECRETS ---
 def get_sheet():
     try:
+        # Lấy info từ mục [service_account] trong Secrets
         info = dict(st.secrets["service_account"])
+        # Xử lý ký tự xuống dòng trong private_key để tránh lỗi format
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        
+        creds = Credentials.from_service_account_info(
+            info, 
+            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        )
         return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
-    except: return None
+    except Exception as e:
+        st.error(f"Lỗi kết nối: {e}")
+        return None
 
 # --- GIAO DIỆN ---
 if "password_correct" not in st.session_state:
@@ -87,16 +95,15 @@ else:
                 diff = (event_date.date() - now.date()).days if event_date else 999
                 days_left_list.append(diff)
                 
-                # --- LOGIC GỬI LIÊN TỤC TỪ 3 NGÀY ĐẾN 0 NGÀY ---
+                # Logic gửi liên tục từ 3 ngày đến 0 ngày
                 if 0 <= diff <= 3:
                     prefix = "🔴 HÔM NAY" if diff == 0 else f"🔔 Còn {diff} ngày"
                     messages_to_send.append(f"{prefix}: *{row['Tên']}* ({row['Ngày']})")
             except: 
                 days_left_list.append(999)
 
-        # Gửi thông báo tự động (mỗi lần mở app sẽ kiểm tra)
+        # Gửi thông báo tự động
         if messages_to_send:
-            # Tạo một khóa để tránh gửi lặp quá nhiều lần trong 1 phiên làm việc
             current_check = ",".join(messages_to_send)
             if st.session_state.get('last_notified') != current_check:
                 full_msg = "📢 *NHẮC NHỞ SỰ KIỆN SẮP TỚI:*\n" + "\n".join(messages_to_send)
@@ -129,21 +136,29 @@ else:
             with col_b2:
                 if st.button("📝", key=f"edit_{index}"):
                     st.session_state.editing_row = row['Tên']
+                    st.rerun() # Refresh để hiện form sửa
             st.divider()
 
-        # --- FORM SỬA / THÊM MỚI (Giữ nguyên) ---
+        # --- FORM SỬA ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
                 st.info(f"Đang sửa: {st.session_state.editing_row}")
                 new_name = st.text_input("Tên mới", value=st.session_state.editing_row)
                 new_date = st.text_input("Ngày mới (VD: 27/12)")
-                if st.form_submit_button("Cập nhật"):
-                    cell = sheet.find(st.session_state.editing_row)
-                    sheet.update_cell(cell.row, 1, new_name)
-                    if new_date: sheet.update_cell(cell.row, 2, new_date)
-                    del st.session_state.editing_row
-                    st.rerun()
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    if st.form_submit_button("Cập nhật"):
+                        cell = sheet.find(st.session_state.editing_row)
+                        sheet.update_cell(cell.row, 1, new_name)
+                        if new_date: sheet.update_cell(cell.row, 2, new_date)
+                        del st.session_state.editing_row
+                        st.rerun()
+                with col_f2:
+                    if st.form_submit_button("Hủy"):
+                        del st.session_state.editing_row
+                        st.rerun()
 
+        # --- THÊM MỚI ---
         with st.expander("➕ Thêm sự kiện mới"):
             with st.form("add_new"):
                 n = st.text_input("Tên:")
