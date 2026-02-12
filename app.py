@@ -5,21 +5,23 @@ import gspread
 from google.oauth2.service_account import Credentials
 import requests
 
-st.set_page_config(page_title="Quản Lý Sự Kiện", page_icon="📅")
+st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅")
 
-# --- HÀM GỬI TELEGRAM (CÓ HIỂN THỊ LỖI ĐỂ KIỂM TRA) ---
+# --- HÀM GỬI TELEGRAM ---
 def send_telegram(message):
     try:
+        # Lấy thông tin từ Secrets
         token = st.secrets["telegram_token"]
         chat_id = st.secrets["telegram_chat_id"]
+        
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {"chat_id": chat_id, "text": message}
         response = requests.post(url, data=payload)
         return response.json()
     except Exception as e:
-        st.error(f"Lỗi gửi Telegram: {e}")
-        return None
+        return {"ok": False, "description": str(e)}
 
+# --- HÀM KẾT NỐI GOOGLE SHEETS ---
 def get_sheet():
     try:
         info = dict(st.secrets["service_account"])
@@ -29,10 +31,10 @@ def get_sheet():
         client = gspread.authorize(creds)
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {str(e)}")
+        st.error(f"Lỗi kết nối Robot Google: {str(e)}")
         return None
 
-# --- GIAO DIỆN CHÍNH ---
+# --- GIAO DIỆN ĐĂNG NHẬP ---
 if "password_correct" not in st.session_state:
     st.subheader("🔒 Đăng nhập hệ thống")
     pw = st.text_input("Mật khẩu:", type="password")
@@ -47,45 +49,51 @@ else:
     sheet = get_sheet()
     
     if sheet:
-        data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # --- NÚT BẤM TEST THỬ TELEGRAM NGAY LẬP TỨC ---
-        if st.button("🚀 Bấm vào đây để Test gửi Telegram thử"):
-            res = send_telegram("🔔 Tin nhắn thử nghiệm từ App Lịch Gia Đình! Nếu anh thấy tin này nghĩa là cấu hình đã ĐÚNG.")
-            if res and res.get("ok"):
-                st.success("✅ Telegram báo 'OK'! Anh kiểm tra điện thoại nhé.")
+        # NÚT TEST NHANH
+        if st.button("🚀 Bấm để Test gửi Telegram ngay bây giờ"):
+            res = send_telegram("🔔 Tin nhắn Test: Robot đang hoạt động tốt!")
+            if res.get("ok"):
+                st.success("✅ Đã gửi! Anh kiểm tra Telegram nhé.")
             else:
-                st.error(f"❌ Telegram báo lỗi: {res}")
+                st.error(f"❌ Lỗi Telegram: {res.get('description')}")
 
         st.write("---")
         
-        # --- LOGIC THÔNG BÁO TỰ ĐỘNG ---
-        now = datetime.now()
-        upcoming_found = False
+        # ĐỌC DỮ LIỆU
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
         
+        # --- LOGIC THÔNG BÁO TỰ ĐỘNG (KHOẢNG CÁCH 3 NGÀY) ---
+        now = datetime.now()
+        st.subheader("📢 Nhật ký thông báo hôm nay:")
+        notification_sent = False
+
         for index, row in df.iterrows():
             try:
-                # Ép kiểu ngày từ Sheet (giả sử là 27/12) thành ngày của năm hiện tại
-                day, month = map(int, str(row['Ngày']).split('/'))
-                event_date = datetime(now.year, month, day)
+                # Xử lý ngày tháng (chấp nhận cả 6/01 và 06/01)
+                date_parts = str(row['Ngày']).split('/')
+                d = int(date_parts[0])
+                m = int(date_parts[1])
                 
-                # Tính khoảng cách
+                event_date = datetime(now.year, m, d)
                 diff = (event_date - now).days + 1
                 
-                # TEST: Nếu trong vòng 7 ngày tới thì thông báo luôn để anh dễ thấy
-                if 0 <= diff <= 7:
-                    msg = f"🔔 SẮP ĐẾN: '{row['Tên']}' còn {diff} ngày nữa là đến ({row['Ngày']})!"
-                    send_telegram(msg)
-                    st.info(f"📤 Đã tự động gửi thông báo cho: {row['Tên']}")
-                    upcoming_found = True
+                # CHỈNH SỬA TẠI ĐÂY: Nếu cách đúng 3 ngày (hoặc anh muốn test thì đổi thành 1)
+                if diff == 3:
+                    msg = f"🔔 NHẮC NHỞ: Sự kiện '{row['Tên']}' sẽ diễn ra sau 3 ngày nữa ({row['Ngày']})!"
+                    res = send_telegram(msg)
+                    if res.get("ok"):
+                        st.info(f"✅ Đã gửi nhắc nhở cho: {row['Tên']}")
+                    notification_sent = True
             except:
                 continue
         
-        if not upcoming_found:
-            st.write("Hiện tại không có sự kiện nào trong 7 ngày tới.")
+        if not notification_sent:
+            st.write("Chưa có sự kiện nào cần báo (cách đúng 3 ngày).")
 
-        st.dataframe(df)
+        st.write("---")
+        st.subheader("📋 Danh sách sự kiện")
+        st.dataframe(df, use_container_width=True)
 
         with st.expander("➕ Thêm sự kiện mới"):
             name = st.text_input("Tên sự kiện:")
@@ -94,5 +102,5 @@ else:
             if st.button("Lưu"):
                 if name and date_input:
                     sheet.append_row([name, date_input, etype])
-                    st.success("Đã thêm thành công!")
+                    st.success("Đã lưu!")
                     st.rerun()
