@@ -11,20 +11,18 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 # Kết nối Google Sheets
 def get_sheet():
     try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets"]
-        # Lấy thông tin từ secrets và ép kiểu dict
-        creds_info = dict(st.secrets["gcp_service_account"])
-        
-        # XỬ LÝ LỖI PEM: Dọn dẹp các ký tự xuống dòng thừa
-        if "private_key" in creds_info:
-            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n").strip()
+        # Ép kiểu về dict và làm sạch dữ liệu
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "private_key" in creds_dict:
+            # Sửa lỗi ký tự xuống dòng và xóa khoảng trắng ở hai đầu
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
             
-        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        scope = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
-        # Truy cập Sheet bằng ID
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
     except Exception as e:
-        st.error(f"Lỗi kết nối Robot: {e}")
+        st.error(f"Lỗi bước kết nối: {e}")
         return None
 
 def get_lunar_now():
