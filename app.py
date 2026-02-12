@@ -8,6 +8,16 @@ from lunar_python import Lunar, Solar
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅", layout="wide")
 
+# --- HÀM GỬI TELEGRAM ---
+def send_telegram(message):
+    try:
+        token = st.secrets["telegram_token"]
+        chat_id = st.secrets["telegram_chat_id"]
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, data={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"})
+    except:
+        pass
+
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
 def get_solar_from_lunar(lunar_day, lunar_month):
     now = datetime.now()
@@ -60,8 +70,9 @@ else:
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
-        # Tính toán số ngày sắp đến
         days_left_list = []
+        messages_to_send = []
+
         for index, row in df.iterrows():
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
@@ -71,48 +82,61 @@ else:
                     event_date = datetime(now.year, month, day)
                     if (event_date.date() - now.date()).days < -1:
                         event_date = datetime(now.year + 1, month, day)
+                
                 diff = (event_date.date() - now.date()).days if event_date else 999
                 days_left_list.append(diff)
-            except: days_left_list.append(999)
+                
+                # Tự động gom thông báo Telegram (nếu còn 0 hoặc 3 ngày)
+                if diff == 0:
+                    messages_to_send.append(f"🔴 *HÔM NAY:* {row['Tên']} ({row['Ngày']})")
+                elif diff == 3:
+                    messages_to_send.append(f"🔔 *SẮP ĐẾN (3 ngày nữa):* {row['Tên']} ({row['Ngày']})")
+            except: 
+                days_left_list.append(999)
+
+        # Gửi thông báo tự động nếu có
+        if messages_to_send and "notified" not in st.session_state:
+            full_msg = "📢 *NHẮC NHỞ SỰ KIỆN GIA ĐÌNH:*\n" + "\n".join(messages_to_send)
+            send_telegram(full_msg)
+            st.session_state.notified = True
 
         df['Sắp đến (ngày)'] = days_left_list
         df = df.sort_values(by='Sắp đến (ngày)')
 
-        # --- BẢNG DANH SÁCH SỰ KIỆN ---
+        # --- BẢNG DANH SÁCH ---
         st.subheader("📋 Danh sách sự kiện")
-        
-        # Tạo cột ảo để hiển thị nút mà không làm hỏng DataFrame gốc
         for index, row in df.iterrows():
             col_t1, col_t2, col_t3, col_t4, col_b1, col_b2 = st.columns([3, 2, 2, 2, 1, 1])
-            
-            # Tô màu đỏ nếu dưới 7 ngày
-            color = "#BE123C" if row['Sắp đến (ngày)'] <= 7 else "#374151"
-            weight = "bold" if row['Sắp đến (ngày)'] <= 7 else "normal"
-            
             with col_t1: st.write(f"**{row['Tên']}**")
             with col_t2: st.write(row['Ngày'])
             with col_t3: st.write(row['Loại'])
-            with col_t4: st.write(f":red[{row['Sắp đến (ngày)']} ngày]" if row['Sắp đến (ngày)'] <= 7 else f"{row['Sắp đến (ngày)']} ngày")
+            with col_t4: 
+                if row['Sắp đến (ngày)'] <= 7:
+                    st.markdown(f"<span style='color:red; font-weight:bold;'>{row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
+                else:
+                    st.write(f"{row['Sắp đến (ngày)']} ngày")
             
-            # Nút Xóa
             with col_b1:
                 if st.button("🗑️", key=f"del_{index}"):
                     cell = sheet.find(row['Tên'])
                     sheet.delete_rows(cell.row)
-                    st.toast(f"Đã xóa {row['Tên']}")
                     st.rerun()
-            
-            # Nút Sửa
             with col_b2:
                 if st.button("📝", key=f"edit_{index}"):
                     st.session_state.editing_row = row['Tên']
-            
             st.divider()
 
-        # --- FORM SỬA (Chỉ hiện khi bấm nút Sửa) ---
+        # --- CÁC NÚT CHỨC NĂNG PHỤ ---
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("🚀 Test gửi Telegram ngay"):
+                send_telegram("✅ Hệ thống nhắc lịch của anh vẫn đang hoạt động tốt!")
+                st.success("Đã gửi tin nhắn test!")
+        
+        # --- FORM SỬA ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
-                st.info(f"Đang sửa sự kiện: {st.session_state.editing_row}")
+                st.info(f"Đang sửa: {st.session_state.editing_row}")
                 new_name = st.text_input("Tên mới", value=st.session_state.editing_row)
                 new_date = st.text_input("Ngày mới (VD: 27/12)")
                 if st.form_submit_button("Cập nhật"):
@@ -120,7 +144,6 @@ else:
                     sheet.update_cell(cell.row, 1, new_name)
                     if new_date: sheet.update_cell(cell.row, 2, new_date)
                     del st.session_state.editing_row
-                    st.success("Đã cập nhật!")
                     st.rerun()
 
         # --- THÊM MỚI ---
