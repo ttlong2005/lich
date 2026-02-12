@@ -28,6 +28,7 @@ def get_solar_from_lunar(lunar_day, lunar_month):
             lunar = Lunar.fromYmd(y, lunar_month, lunar_day)
             solar = lunar.getSolar()
             dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
+            # Lấy ngày chưa qua hoặc chỉ mới qua hôm nay (>= -1 để giữ ngày hiện tại)
             if (dt_solar.date() - now.date()).days >= -1:
                 potential_dates.append(dt_solar)
         except: continue
@@ -86,19 +87,21 @@ else:
                 diff = (event_date.date() - now.date()).days if event_date else 999
                 days_left_list.append(diff)
                 
-                # Tự động gom thông báo Telegram (nếu còn 0 hoặc 3 ngày)
-                if diff == 0:
-                    messages_to_send.append(f"🔴 *HÔM NAY:* {row['Tên']} ({row['Ngày']})")
-                elif diff == 3:
-                    messages_to_send.append(f"🔔 *SẮP ĐẾN (3 ngày nữa):* {row['Tên']} ({row['Ngày']})")
+                # --- LOGIC GỬI LIÊN TỤC TỪ 3 NGÀY ĐẾN 0 NGÀY ---
+                if 0 <= diff <= 3:
+                    prefix = "🔴 HÔM NAY" if diff == 0 else f"🔔 Còn {diff} ngày"
+                    messages_to_send.append(f"{prefix}: *{row['Tên']}* ({row['Ngày']})")
             except: 
                 days_left_list.append(999)
 
-        # Gửi thông báo tự động nếu có
-        if messages_to_send and "notified" not in st.session_state:
-            full_msg = "📢 *NHẮC NHỞ SỰ KIỆN GIA ĐÌNH:*\n" + "\n".join(messages_to_send)
-            send_telegram(full_msg)
-            st.session_state.notified = True
+        # Gửi thông báo tự động (mỗi lần mở app sẽ kiểm tra)
+        if messages_to_send:
+            # Tạo một khóa để tránh gửi lặp quá nhiều lần trong 1 phiên làm việc
+            current_check = ",".join(messages_to_send)
+            if st.session_state.get('last_notified') != current_check:
+                full_msg = "📢 *NHẮC NHỞ SỰ KIỆN SẮP TỚI:*\n" + "\n".join(messages_to_send)
+                send_telegram(full_msg)
+                st.session_state.last_notified = current_check
 
         df['Sắp đến (ngày)'] = days_left_list
         df = df.sort_values(by='Sắp đến (ngày)')
@@ -111,8 +114,10 @@ else:
             with col_t2: st.write(row['Ngày'])
             with col_t3: st.write(row['Loại'])
             with col_t4: 
-                if row['Sắp đến (ngày)'] <= 7:
-                    st.markdown(f"<span style='color:red; font-weight:bold;'>{row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
+                if 0 <= row['Sắp đến (ngày)'] <= 3:
+                    st.markdown(f"<span style='color:red; font-weight:bold;'>🔥 {row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
+                elif row['Sắp đến (ngày)'] <= 7:
+                    st.markdown(f"<span style='color:orange; font-weight:bold;'>{row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
                 else:
                     st.write(f"{row['Sắp đến (ngày)']} ngày")
             
@@ -126,14 +131,7 @@ else:
                     st.session_state.editing_row = row['Tên']
             st.divider()
 
-        # --- CÁC NÚT CHỨC NĂNG PHỤ ---
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("🚀 Test gửi Telegram ngay"):
-                send_telegram("✅ Hệ thống nhắc lịch của anh vẫn đang hoạt động tốt!")
-                st.success("Đã gửi tin nhắn test!")
-        
-        # --- FORM SỬA ---
+        # --- FORM SỬA / THÊM MỚI (Giữ nguyên) ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
                 st.info(f"Đang sửa: {st.session_state.editing_row}")
@@ -146,7 +144,6 @@ else:
                     del st.session_state.editing_row
                     st.rerun()
 
-        # --- THÊM MỚI ---
         with st.expander("➕ Thêm sự kiện mới"):
             with st.form("add_new"):
                 n = st.text_input("Tên:")
