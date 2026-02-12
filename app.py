@@ -8,35 +8,31 @@ from lunar_python import Lunar, Solar
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅")
 
+# --- TỪ ĐIỂN TIẾNG VIỆT CHO CAN CHI ---
+CAN = ["Giáp", "Ất", "Bính", "Đinh", "Mậu", "Kỷ", "Canh", "Tân", "Nhâm", "Quý"]
+CHI = ["Tý", "Sửu", "Dần", "Mão", "Thìn", "Tỵ", "Ngọ", "Mùi", "Thân", "Dậu", "Tuất", "Hợi"]
+
+def get_vietnamese_year(lunar):
+    # Hàm này giúp chuyển các ký tự Hán thành chữ Tiếng Việt chuẩn
+    gan_zhi = lunar.getYearInGanZhi() # Trả về VD: "乙巳"
+    # Thư viện trả về Can Chi tiếng Việt thông qua các hàm riêng biệt
+    return f"{lunar.getYearGan()}{lunar.getYearZhi()} ({lunar.getYear()})"
+
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG CHUẨN XÁC ---
 def get_solar_from_lunar(lunar_day, lunar_month):
     now = datetime.now()
-    # Kiểm tra 3 năm để tìm ngày âm gần nhất (không để bị nhảy 300 ngày)
     years_to_check = [now.year - 1, now.year, now.year + 1]
     potential_dates = []
-
     for y in years_to_check:
         try:
             lunar = Lunar.fromYmd(y, lunar_month, lunar_day)
             solar = lunar.getSolar()
             dt_solar = datetime(solar.getYear(), solar.getMonth(), solar.getDay())
-            # Nếu ngày này chưa qua quá 1 ngày thì đưa vào danh sách ứng viên
             if (dt_solar.date() - now.date()).days >= -1:
                 potential_dates.append(dt_solar)
-        except:
-            continue
-    
-    if potential_dates:
-        return min(potential_dates)
+        except: continue
+    if potential_dates: return min(potential_dates)
     return None
-
-def send_telegram(message):
-    try:
-        token = st.secrets["telegram_token"]
-        chat_id = st.secrets["telegram_chat_id"]
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, data={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"})
-    except: pass
 
 def get_sheet():
     try:
@@ -57,17 +53,16 @@ if "password_correct" not in st.session_state:
 else:
     st.title("📅 Quản Lý Sự Kiện Gia Đình")
     
-    # --- HIỂN THỊ NGÀY HÔM NAY (ĐÃ SỬA CHỮ TIẾNG VIỆT) ---
+    # --- HIỂN THỊ NGÀY HÔM NAY ---
     now = datetime.now()
     lunar_now = Lunar.fromDate(now)
-    
-    # Lấy Can Chi bằng tiếng Việt và Tiết khí chuẩn
-    nam_viet = lunar_now.getYearInGanZhiByLiChun() 
+    # Lấy Can Chi bằng Tiếng Việt
+    nam_can_chi = f"{lunar_now.getYearGan()}{lunar_now.getYearZhi()}"
     tiet_khi = lunar_now.getJieQi() if lunar_now.getJieQi() else "Bình thường"
 
     st.info(f"""
     📅 **Dương lịch:** {now.strftime('%d/%m/%Y')}  
-    🌙 **Âm lịch:** Ngày **{lunar_now.getDay()}/{lunar_now.getMonth()}** - Năm **{nam_viet}** ({lunar_now.getYear()})  
+    🌙 **Âm lịch:** Ngày **{lunar_now.getDay()}/{lunar_now.getMonth()}** - Năm **{nam_can_chi}** ({lunar_now.getYear()})  
     🎋 **Tiết khí:** {tiet_khi}
     """)
 
@@ -76,7 +71,6 @@ else:
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         days_left_list = []
-
         for index, row in df.iterrows():
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
@@ -86,22 +80,14 @@ else:
                     event_date = datetime(now.year, month, day)
                     if (event_date.date() - now.date()).days < -1:
                         event_date = datetime(now.year + 1, month, day)
-                
                 if event_date:
-                    diff = (event_date.date() - now.date()).days
-                    days_left_list.append(diff)
-                    if diff == 3:
-                        send_telegram(f"🔔 *NHẮC NHỞ:* {row['Tên']} ({row['Ngày']}) còn 3 ngày nữa!")
-                else:
-                    days_left_list.append(None)
-            except:
-                days_left_list.append(None)
+                    days_left_list.append((event_date.date() - now.date()).days)
+                else: days_left_list.append(None)
+            except: days_left_list.append(None)
 
         df['Số ngày sắp đến'] = days_left_list
         st.subheader("📋 Danh sách sự kiện")
-        # Sắp xếp để những ngày sắp đến hiện lên đầu
-        df_display = df.sort_values(by='Số ngày sắp đến', ascending=True)
-        st.dataframe(df_display, use_container_width=True)
+        st.dataframe(df.sort_values(by='Số ngày sắp đến'), width='stretch')
 
         with st.expander("➕ Thêm sự kiện mới"):
             name = st.text_input("Tên:")
