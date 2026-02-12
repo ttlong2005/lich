@@ -62,10 +62,14 @@ else:
     solar_now = Solar.fromDate(now)
     lunar_now = Lunar.fromDate(now)
     
-    st.info(f"""
-    📅 **Hôm nay:** {now.strftime('%d/%m/%Y')} (Dương lịch)  
-    🌙 **Âm lịch:** Ngày {lunar_now.getDay()}/{lunar_now.getMonth()} năm {lunar_now.getYearInGanZhi()} ({lunar_now.getYearZhi()})
-    """)
+# Lấy tên năm tiếng Việt (ví dụ: Ất Tỵ) thay vì ký tự Hán
+nam_can_chi = f"{lunar_now.getYearInGanZhi()} ({lunar_now.getYear()})"
+tiet_khi = lunar_now.getJieQi()
+
+st.info(f"""
+📅 **Dương lịch:** {now.strftime('%d/%m/%Y')}  
+🌙 **Âm lịch:** Ngày **{lunar_now.getDay()}/{lunar_now.getMonth()}** - Năm **{lunar_now.getYearInGanZhi()}** 🎋 **Tiết khí:** {tiet_khi}
+""")
 
     sheet = get_sheet()
     if sheet:
