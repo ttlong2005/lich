@@ -10,12 +10,16 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 
 # 2. Hàm kết nối Google Sheets
 import json
+
 def get_sheet():
     try:
-        # Đọc chìa khóa từ file key.json thay vì Secrets
         with open('key.json') as f:
             creds_info = json.load(f)
         
+        # Sửa lỗi ký tự xuống dòng nếu có
+        if "private_key" in creds_info:
+            creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+            
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         client = gspread.authorize(creds)
