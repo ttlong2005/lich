@@ -12,27 +12,24 @@ st.set_page_config(page_title="Lịch Gia Đình", page_icon="📅")
 def get_sheet():
     try:
         # 1. Đọc dữ liệu từ Secrets
-        # Lưu ý: gcp_service_account phải khớp với tiêu đề trong ngoặc vuông [] ở Secrets
         creds_dict = dict(st.secrets["gcp_service_account"])
         
-        # 2. XỬ LÝ LỖI INVALID BYTE: 
-        # Lệnh này sẽ ép các ký tự xuống dòng về đúng định dạng mà Google yêu cầu
+        # 2. XỬ LÝ LỖI INVALID BYTE: Ép ký tự xuống dòng chuẩn xác
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
         
         # 3. Khai báo quyền
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         
-        # 4. Tạo credentials
+        # 4. Tạo credentials và kết nối
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         
-        # 5. Mở sheet (Dùng ID đã cấu hình trong Secrets)
+        # 5. Mở sheet bằng ID từ Secrets
         return client.open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
         
     except Exception as e:
-        # Hiện lỗi chi tiết để mình biết sai ở đâu
-        st.error(f"Lỗi bước kết nối: {str(e)}")
+        st.error(f"Lỗi kết nối Robot: {str(e)}")
         return None
 
 def get_lunar_now():
@@ -80,9 +77,12 @@ def main():
 
         if st.button("🚀 Lưu vĩnh viễn"):
             if name:
-                sheet.append_row([name, final_date, etype])
-                st.success("Đã lưu thành công!")
-                st.rerun()
+                try:
+                    sheet.append_row([name, final_date, etype])
+                    st.success("Đã lưu thành công!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi khi lưu: {e}")
 
     # Hiển thị danh sách
     st.write("---")
@@ -93,8 +93,8 @@ def main():
             st.table(pd.DataFrame(data))
         else:
             st.write("Chưa có dữ liệu.")
-    except:
-        st.write("Đang tải dữ liệu...")
+    except Exception as e:
+        st.write("Đang tải dữ liệu hoặc bảng trống...")
 
 if check_password():
     main()
