@@ -4,17 +4,24 @@ from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 import requests
-from khamphi.lunar import LunarDate # Thư viện chuyển đổi lịch Việt
+from lunarcalendar import Lunar, Converter
 
 st.set_page_config(page_title="Quản Lý Sự Kiện Gia Đình", page_icon="📅")
 
-# --- HÀM CHUYỂN ÂM LỊCH SANG DƯƠNG LỊCH ---
-def get_solar_from_lunar(lunar_day, lunar_month, is_next_year=False):
+# --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
+def get_solar_from_lunar(lunar_day, lunar_month):
     now = datetime.now()
-    year = now.year if not is_next_year else now.year + 1
-    # Chuyển từ ngày Âm sang ngày Dương của năm tương ứng
-    solar = LunarDate(year, lunar_month, lunar_day).to_solar_date()
-    return datetime(solar.year, solar.month, solar.day)
+    # Thử tính cho năm hiện tại
+    lunar_date = Lunar(now.year, lunar_month, lunar_day)
+    solar_date = Converter.LunarToSolar(lunar_date)
+    dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
+    
+    # Nếu ngày đó đã qua trong năm nay, tính cho năm sau
+    if (dt_solar.date() - now.date()).days < 0:
+        lunar_date = Lunar(now.year + 1, lunar_month, lunar_day)
+        solar_date = Converter.LunarToSolar(lunar_date)
+        dt_solar = datetime(solar_date.year, solar_date.month, solar_date.day)
+    return dt_solar
 
 # --- HÀM GỬI TELEGRAM ---
 def send_telegram(message):
@@ -60,34 +67,31 @@ else:
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
                 
-                if row['Loại'] == 'Âm lịch':
-                    # Tính ngày Dương ứng với ngày Âm năm nay
+                if str(row['Loại']).strip() == 'Âm lịch':
                     event_date = get_solar_from_lunar(day, month)
-                    # Nếu ngày đó đã qua quá 1 ngày, tính cho năm sau
-                    if (event_date - now).days < -1:
-                        event_date = get_solar_from_lunar(day, month, is_next_year=True)
                 else:
-                    # Tính theo Dương lịch bình thường
                     event_date = datetime(now.year, month, day)
-                    if (event_date - now).days < -1:
+                    if (event_date.date() - now.date()).days < 0:
                         event_date = datetime(now.year + 1, month, day)
                 
-                diff = (event_date - now).days + 1
+                diff = (event_date.date() - now.date()).days
                 days_left_list.append(diff)
                 
-                # GỬI THÔNG BÁO CỤ THỂ KHI CÁCH ĐÚNG 3 NGÀY
+                # Gửi thông báo chi tiết khi còn đúng 3 ngày
                 if diff == 3:
-                    loai_lich = "🌙 Âm lịch" if row['Loại'] == 'Âm lịch' else "☀️ Dương lịch"
+                    loai_lich = "🌙 Âm lịch" if str(row['Loại']).strip() == 'Âm lịch' else "☀️ Dương lịch"
                     msg = (f"🔔 *NHẮC NHỞ SỰ KIỆN SẮP ĐẾN*\n"
                            f"📌 *Sự kiện:* {row['Tên']}\n"
-                           f"📅 *Ngày:* {row['Ngày']} ({loai_lich})\n"
-                           f"⏳ *Còn lại:* 3 ngày nữa (Ngày dương: {event_date.strftime('%d/%m/%Y')})")
+                           f"📅 *Ngày ghi:* {row['Ngày']} ({loai_lich})\n"
+                           f"⏳ *Còn lại:* 3 ngày nữa\n"
+                           f"📅 *Ngày dương tương ứng:* {event_date.strftime('%d/%m/%Y')}")
                     send_telegram(msg)
             except:
                 days_left_list.append(None)
 
         df['Số ngày sắp đến'] = days_left_list
         st.subheader("📋 Danh sách sự kiện")
+        # Hiển thị bảng đã sắp xếp theo ngày gần nhất
         st.dataframe(df.sort_values(by='Số ngày sắp đến'), use_container_width=True)
 
         with st.expander("➕ Thêm sự kiện mới"):
