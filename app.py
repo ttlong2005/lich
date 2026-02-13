@@ -36,11 +36,8 @@ def get_solar_from_lunar(lunar_day, lunar_month):
 # --- KẾT NỐI GOOGLE SHEETS QUA SECRETS ---
 def get_sheet():
     try:
-        # Lấy info từ mục [service_account] trong Secrets
         info = dict(st.secrets["service_account"])
-        # Xử lý ký tự xuống dòng trong private_key để tránh lỗi format
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        
         creds = Credentials.from_service_account_info(
             info, 
             scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -95,7 +92,7 @@ else:
                 diff = (event_date.date() - now.date()).days if event_date else 999
                 days_left_list.append(diff)
                 
-                # Logic gửi liên tục từ 3 ngày đến 0 ngày
+                # Logic gửi Telegram từ 3 ngày đến 0 ngày
                 if 0 <= diff <= 3:
                     prefix = "🔴 HÔM NAY" if diff == 0 else f"🔔 Còn {diff} ngày"
                     messages_to_send.append(f"{prefix}: *{row['Tên']}* ({row['Ngày']})")
@@ -116,17 +113,23 @@ else:
         # --- BẢNG DANH SÁCH ---
         st.subheader("📋 Danh sách sự kiện")
         for index, row in df.iterrows():
+            d = row['Sắp đến (ngày)']
             col_t1, col_t2, col_t3, col_t4, col_b1, col_b2 = st.columns([3, 2, 2, 2, 1, 1])
+            
             with col_t1: st.write(f"**{row['Tên']}**")
             with col_t2: st.write(row['Ngày'])
             with col_t3: st.write(row['Loại'])
+            
+            # --- TÔ MÀU THEO KHOẢNG THỜI GIAN ---
             with col_t4: 
-                if 0 <= row['Sắp đến (ngày)'] <= 3:
-                    st.markdown(f"<span style='color:red; font-weight:bold;'>🔥 {row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
-                elif row['Sắp đến (ngày)'] <= 7:
-                    st.markdown(f"<span style='color:orange; font-weight:bold;'>{row['Sắp đến (ngày)']} ngày</span>", unsafe_allow_html=True)
+                if 0 <= d <= 3:
+                    st.markdown(f"<span style='color:#E11D48; font-weight:bold;'>🔥 {d} ngày</span>", unsafe_allow_html=True)
+                elif 4 <= d <= 7:
+                    st.markdown(f"<span style='color:#F59E0B; font-weight:bold;'>🔔 {d} ngày</span>", unsafe_allow_html=True)
+                elif 8 <= d <= 30:
+                    st.markdown(f"<span style='color:#10B981; font-weight:bold;'>📅 {d} ngày</span>", unsafe_allow_html=True)
                 else:
-                    st.write(f"{row['Sắp đến (ngày)']} ngày")
+                    st.write(f"{d} ngày")
             
             with col_b1:
                 if st.button("🗑️", key=f"del_{index}"):
@@ -136,35 +139,34 @@ else:
             with col_b2:
                 if st.button("📝", key=f"edit_{index}"):
                     st.session_state.editing_row = row['Tên']
-                    st.rerun() # Refresh để hiện form sửa
+                    st.rerun()
             st.divider()
 
-        # --- FORM SỬA ---
+        # --- CÁC FORM PHỤ (Sửa/Thêm) ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
                 st.info(f"Đang sửa: {st.session_state.editing_row}")
                 new_name = st.text_input("Tên mới", value=st.session_state.editing_row)
                 new_date = st.text_input("Ngày mới (VD: 27/12)")
-                col_f1, col_f2 = st.columns(2)
-                with col_f1:
+                c1, c2 = st.columns(2)
+                with c1:
                     if st.form_submit_button("Cập nhật"):
                         cell = sheet.find(st.session_state.editing_row)
                         sheet.update_cell(cell.row, 1, new_name)
                         if new_date: sheet.update_cell(cell.row, 2, new_date)
                         del st.session_state.editing_row
                         st.rerun()
-                with col_f2:
+                with c2:
                     if st.form_submit_button("Hủy"):
                         del st.session_state.editing_row
                         st.rerun()
 
-        # --- THÊM MỚI ---
         with st.expander("➕ Thêm sự kiện mới"):
             with st.form("add_new"):
                 n = st.text_input("Tên:")
-                d = st.text_input("Ngày (VD: 15/05):")
+                dt = st.text_input("Ngày (VD: 15/05):")
                 l = st.selectbox("Loại:", ["Âm lịch", "Dương lịch"])
                 if st.form_submit_button("Lưu"):
-                    if n and d:
-                        sheet.append_row([n, d, l])
+                    if n and dt:
+                        sheet.append_row([n, dt, l])
                         st.rerun()
