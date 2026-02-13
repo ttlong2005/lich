@@ -15,8 +15,7 @@ def send_telegram(message):
         chat_id = st.secrets["telegram_chat_id"]
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         requests.post(url, data={"chat_id": chat_id, "text": message, "parse_mode": "Markdown"})
-    except:
-        pass
+    except: pass
 
 # --- HÀM CHUYỂN ÂM SANG DƯƠNG ---
 def get_solar_from_lunar(lunar_day, lunar_month):
@@ -33,19 +32,13 @@ def get_solar_from_lunar(lunar_day, lunar_month):
         except: continue
     return min(potential_dates) if potential_dates else None
 
-# --- KẾT NỐI GOOGLE SHEETS QUA SECRETS ---
 def get_sheet():
     try:
         info = dict(st.secrets["service_account"])
         info["private_key"] = info["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(
-            info, 
-            scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        )
+        creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
         return gspread.authorize(creds).open_by_key(st.secrets["sheet_id"]).get_worksheet(0)
-    except Exception as e:
-        st.error(f"Lỗi kết nối: {e}")
-        return None
+    except: return None
 
 # --- GIAO DIỆN ---
 if "password_correct" not in st.session_state:
@@ -64,7 +57,7 @@ else:
     nam_viet = lunar_now.getYearInGanZhiByLiChun()
     
     st.markdown(f"""
-    <div style="background-color: #1E3A8A; padding: 20px; border-radius: 10px; border-left: 10px solid #F87171; color: white; margin-bottom: 20px;">
+    <div style="background-color: #1E3A8A; padding: 20px; border-radius: 10px; border-left: 10px solid #F87171; color: white; margin-bottom: 25px;">
         <h2 style="margin:0; color: white;">☀️ Dương lịch: {now.strftime('%d/%m/%Y')}</h2>
         <h3 style="margin:0; color: #FCD34D;">🌙 Âm lịch: Ngày {lunar_now.getDay()}/{lunar_now.getMonth()} - Năm {nam_viet}</h3>
         <p style="margin:0; font-style: italic;">🎋 Tiết khí: {lunar_now.getJieQi() if lunar_now.getJieQi() else "Bình thường"}</p>
@@ -91,76 +84,96 @@ else:
                 
                 diff = (event_date.date() - now.date()).days if event_date else 999
                 days_left_list.append(diff)
-                
-                # Logic gửi Telegram từ 3 ngày đến 0 ngày
                 if 0 <= diff <= 3:
                     prefix = "🔴 HÔM NAY" if diff == 0 else f"🔔 Còn {diff} ngày"
                     messages_to_send.append(f"{prefix}: *{row['Tên']}* ({row['Ngày']})")
-            except: 
-                days_left_list.append(999)
+            except: days_left_list.append(999)
 
-        # Gửi thông báo tự động
         if messages_to_send:
             current_check = ",".join(messages_to_send)
             if st.session_state.get('last_notified') != current_check:
-                full_msg = "📢 *NHẮC NHỞ SỰ KIỆN SẮP TỚI:*\n" + "\n".join(messages_to_send)
-                send_telegram(full_msg)
+                send_telegram("📢 *NHẮC NHỞ SỰ KIỆN SẮP TỚI:*\n" + "\n".join(messages_to_send))
                 st.session_state.last_notified = current_check
 
-        df['Sắp đến (ngày)'] = days_left_list
-        df = df.sort_values(by='Sắp đến (ngày)')
+        df['Sắp đến'] = days_left_list
+        df = df.sort_values(by='Sắp đến')
 
-        # --- BẢNG DANH SÁCH ---
+        # --- BẢNG DANH SÁCH TÔ MÀU NGUYÊN DÒNG ---
         st.subheader("📋 Danh sách sự kiện")
-        for index, row in df.iterrows():
-            d = row['Sắp đến (ngày)']
-            col_t1, col_t2, col_t3, col_t4, col_b1, col_b2 = st.columns([3, 2, 2, 2, 1, 1])
-            
-            with col_t1: st.write(f"**{row['Tên']}**")
-            with col_t2: st.write(row['Ngày'])
-            with col_t3: st.write(row['Loại'])
-            
-            # --- TÔ MÀU THEO KHOẢNG THỜI GIAN ---
-            with col_t4: 
-                if 0 <= d <= 3:
-                    st.markdown(f"<span style='color:#E11D48; font-weight:bold;'>🔥 {d} ngày</span>", unsafe_allow_html=True)
-                elif 4 <= d <= 7:
-                    st.markdown(f"<span style='color:#F59E0B; font-weight:bold;'>🔔 {d} ngày</span>", unsafe_allow_html=True)
-                elif 8 <= d <= 30:
-                    st.markdown(f"<span style='color:#10B981; font-weight:bold;'>📅 {d} ngày</span>", unsafe_allow_html=True)
-                else:
-                    st.write(f"{d} ngày")
-            
-            with col_b1:
-                if st.button("🗑️", key=f"del_{index}"):
-                    cell = sheet.find(row['Tên'])
-                    sheet.delete_rows(cell.row)
-                    st.rerun()
-            with col_b2:
-                if st.button("📝", key=f"edit_{index}"):
-                    st.session_state.editing_row = row['Tên']
-                    st.rerun()
-            st.divider()
+        
+        # Tiêu đề bảng
+        h_col1, h_col2, h_col3, h_col4, h_col5, h_col6 = st.columns([3, 2, 2, 2, 1, 1])
+        h_col1.write("**Tên sự kiện**")
+        h_col2.write("**Ngày**")
+        h_col3.write("**Loại**")
+        h_col4.write("**Trạng thái**")
+        st.divider()
 
-        # --- CÁC FORM PHỤ (Sửa/Thêm) ---
+        for index, row in df.iterrows():
+            d = row['Sắp đến']
+            
+            # Xác định màu nền cho dòng
+            bg_color = "transparent"
+            text_color = "black"
+            status_text = f"{d} ngày"
+            
+            if 0 <= d <= 3:
+                bg_color = "#FEE2E2" # Đỏ nhạt
+                text_color = "#991B1B" # Đỏ đậm
+                status_text = f"🔥 {d} ngày"
+            elif 4 <= d <= 7:
+                bg_color = "#FFEDD5" # Cam nhạt
+                text_color = "#9A3412" # Cam đậm
+                status_text = f"🔔 {d} ngày"
+            elif 8 <= d <= 30:
+                bg_color = "#DCFCE7" # Xanh lá nhạt
+                text_color = "#166534" # Xanh lá đậm
+                status_text = f"📅 {d} ngày"
+
+            # Dùng container để bọc màu
+            with st.container():
+                st.markdown(f"""
+                    <div style="background-color: {bg_color}; padding: 10px; border-radius: 5px; margin-bottom: -40px;">
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 1, 1])
+                with c1: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{row['Tên']}</p>", unsafe_allow_html=True)
+                with c2: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Ngày']}</p>", unsafe_allow_html=True)
+                with c3: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Loại']}</p>", unsafe_allow_html=True)
+                with c4: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{status_text}</p>", unsafe_allow_html=True)
+                
+                with c5:
+                    if st.button("🗑️", key=f"del_{index}"):
+                        cell = sheet.find(row['Tên'])
+                        sheet.delete_rows(cell.row)
+                        st.rerun()
+                with c6:
+                    if st.button("📝", key=f"edit_{index}"):
+                        st.session_state.editing_row = row['Tên']
+                        st.rerun()
+            st.write("") # Tạo khoảng cách giữa các dòng
+
+        # --- FORM SỬA ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
                 st.info(f"Đang sửa: {st.session_state.editing_row}")
                 new_name = st.text_input("Tên mới", value=st.session_state.editing_row)
                 new_date = st.text_input("Ngày mới (VD: 27/12)")
-                c1, c2 = st.columns(2)
-                with c1:
+                c_f1, c_f2 = st.columns(2)
+                with c_f1:
                     if st.form_submit_button("Cập nhật"):
                         cell = sheet.find(st.session_state.editing_row)
                         sheet.update_cell(cell.row, 1, new_name)
                         if new_date: sheet.update_cell(cell.row, 2, new_date)
                         del st.session_state.editing_row
                         st.rerun()
-                with c2:
+                with c_f2:
                     if st.form_submit_button("Hủy"):
                         del st.session_state.editing_row
                         st.rerun()
 
+        # --- THÊM MỚI ---
         with st.expander("➕ Thêm sự kiện mới"):
             with st.form("add_new"):
                 n = st.text_input("Tên:")
