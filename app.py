@@ -66,30 +66,49 @@ else:
 
     sheet = get_sheet()
     if sheet:
+        sheet = get_sheet()
+    if sheet:
+        # --- CẬP NHẬT MÚI GIỜ VÀ LẤY DỮ LIỆU ---
+        import pytz
+        tz = pytz.timezone('Asia/Ho_Chi_Minh')
+        now = datetime.now(tz)
+        
         data = sheet.get_all_records()
         df = pd.DataFrame(data)
         
         days_left_list = []
+        solar_date_list = [] # Danh sách lưu ngày DL để hiển thị
         messages_to_send = []
 
         for index, row in df.iterrows():
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
                 if "Âm lịch" in str(row['Loại']):
-                    event_date = get_solar_from_lunar(day, month)
-                else:
-                    event_date = datetime(now.year, month, day)
-                    # Nếu dương lịch năm nay đã qua, lấy năm sau
+                    # Tìm ngày DL cho sự kiện âm lịch (đã bao gồm logic nhảy năm)
+                    # Chỉnh lại hàm get_solar_from_lunar một chút để dùng tz
+                    lunar = Lunar.fromYmd(now.year, month, day)
+                    solar = lunar.getSolar()
+                    event_date = datetime(solar.getYear(), solar.getMonth(), solar.getDay(), tzinfo=tz)
+                    
                     if (event_date.date() - now.date()).days < 0:
-                        event_date = datetime(now.year + 1, month, day)
+                        lunar = Lunar.fromYmd(now.year + 1, month, day)
+                        solar = lunar.getSolar()
+                        event_date = datetime(solar.getYear(), solar.getMonth(), solar.getDay(), tzinfo=tz)
+                else:
+                    event_date = datetime(now.year, month, day, tzinfo=tz)
+                    if (event_date.date() - now.date()).days < 0:
+                        event_date = datetime(now.year + 1, month, day, tzinfo=tz)
                 
+                solar_date_list.append(event_date.strftime('%d/%m/%Y'))
                 diff = (event_date.date() - now.date()).days
                 days_left_list.append(diff)
                 
                 if 0 <= diff <= 3:
                     prefix = "🔴 HÔM NAY" if diff == 0 else f"🔔 Còn {diff} ngày"
                     messages_to_send.append(f"{prefix}: *{row['Tên']}* ({row['Ngày']})")
-            except: days_left_list.append(999)
+            except: 
+                days_left_list.append(999)
+                solar_date_list.append("N/A")
 
         if messages_to_send:
             current_check = ",".join(messages_to_send)
@@ -98,15 +117,18 @@ else:
                 st.session_state.last_notified = current_check
 
         df['Sắp đến'] = days_left_list
+        df['Ngày DL'] = solar_date_list
         df = df.sort_values(by='Sắp đến')
 
         st.subheader("📋 Danh sách sự kiện")
         
-        h_col1, h_col2, h_col3, h_col4, h_col5, h_col6 = st.columns([3, 2, 2, 2, 1, 1])
+        # Chia 7 cột để thêm cột Ngày DL
+        h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7 = st.columns([2.5, 1.2, 1.8, 1.2, 1.8, 0.6, 0.6])
         h_col1.write("**Tên sự kiện**")
         h_col2.write("**Ngày**")
-        h_col3.write("**Loại**")
-        h_col4.write("**Trạng thái**")
+        h_col3.write("**Ngày DL**")
+        h_col4.write("**Loại**")
+        h_col5.write("**Trạng thái**")
         st.divider()
 
         for index, row in df.iterrows():
@@ -115,31 +137,28 @@ else:
             text_color = "black"
             status_text = f"{d} ngày"
             
-            if d == 0:
-                bg_color = "#FEE2E2"; text_color = "#991B1B"; status_text = "🔥 Hôm nay"
-            elif 1 <= d <= 3:
-                bg_color = "#FEE2E2"; text_color = "#991B1B"; status_text = f"⏳ {d} ngày"
-            elif 4 <= d <= 7:
-                bg_color = "#FFEDD5"; text_color = "#9A3412"; status_text = f"🔔 {d} ngày"
-            elif 8 <= d <= 30:
-                bg_color = "#DCFCE7"; text_color = "#166534"; status_text = f"📅 {d} ngày"
+            if d == 0: bg_color = "#FEE2E2"; text_color = "#991B1B"; status_text = "🔥 Hôm nay"
+            elif 1 <= d <= 3: bg_color = "#FEE2E2"; text_color = "#991B1B"; status_text = f"⏳ {d} ngày"
+            elif 4 <= d <= 7: bg_color = "#FFEDD5"; text_color = "#9A3412"; status_text = f"🔔 {d} ngày"
+            elif 8 <= d <= 30: bg_color = "#DCFCE7"; text_color = "#166534"; status_text = f"📅 {d} ngày"
 
             with st.container():
                 st.markdown(f'<div style="background-color: {bg_color}; padding: 10px; border-radius: 5px; margin-bottom: -40px;"></div>', unsafe_allow_html=True)
-                c1, c2, c3, c4, c5, c6 = st.columns([3, 2, 2, 2, 1, 1])
+                c1, c2, c3, c4, c5, c6, c7 = st.columns([2.5, 1.2, 1.8, 1.2, 1.8, 0.6, 0.6])
                 with c1: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{row['Tên']}</p>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Ngày']}</p>", unsafe_allow_html=True)
-                with c3: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Loại']}</p>", unsafe_allow_html=True)
-                with c4: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{status_text}</p>", unsafe_allow_html=True)
-                with c5:
+                with c3: st.markdown(f"<p style='color:{text_color}; font-style:italic; margin-top:10px;'>{row['Ngày DL']}</p>", unsafe_allow_html=True)
+                with c4: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Loại']}</p>", unsafe_allow_html=True)
+                with c5: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{status_text}</p>", unsafe_allow_html=True)
+                with c6:
                     if st.button("🗑️", key=f"del_{index}"):
                         cell = sheet.find(row['Tên']); sheet.delete_rows(cell.row); st.rerun()
-                with c6:
+                with c7:
                     if st.button("📝", key=f"edit_{index}"):
                         st.session_state.editing_row = row['Tên']; st.rerun()
             st.write("")
 
-        # --- FORM SỬA / THÊM MỚI ---
+        # --- PHẦN FORM SỬA VÀ THÊM MỚI GIỮ NGUYÊN PHÍA DƯỚI ---
         if "editing_row" in st.session_state:
             with st.form("edit_form"):
                 st.info(f"Đang sửa: {st.session_state.editing_row}")
