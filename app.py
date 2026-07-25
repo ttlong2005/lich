@@ -66,8 +66,6 @@ else:
 
     sheet = get_sheet()
     if sheet:
-        sheet = get_sheet()
-    if sheet:
         # --- CẬP NHẬT MÚI GIỜ VÀ LẤY DỮ LIỆU ---
         import pytz
         tz = pytz.timezone('Asia/Ho_Chi_Minh')
@@ -78,14 +76,17 @@ else:
         
         days_left_list = []
         solar_date_list = [] # Danh sách lưu ngày DL để hiển thị
+        thu_list = [] # Danh sách lưu Thứ
         messages_to_send = []
+        
+        # Từ điển ánh xạ thứ trong tuần của Python (0=Thứ 2, 6=Chủ nhật)
+        thu_dict = {0: "Thứ 2", 1: "Thứ 3", 2: "Thứ 4", 3: "Thứ 5", 4: "Thứ 6", 5: "Thứ 7", 6: "Chủ nhật"}
 
         for index, row in df.iterrows():
             try:
                 day, month = map(int, str(row['Ngày']).split('/'))
                 if "Âm lịch" in str(row['Loại']):
                     # Tìm ngày DL cho sự kiện âm lịch (đã bao gồm logic nhảy năm)
-                    # Chỉnh lại hàm get_solar_from_lunar một chút để dùng tz
                     lunar = Lunar.fromYmd(now.year, month, day)
                     solar = lunar.getSolar()
                     event_date = datetime(solar.getYear(), solar.getMonth(), solar.getDay(), tzinfo=tz)
@@ -100,6 +101,7 @@ else:
                         event_date = datetime(now.year + 1, month, day, tzinfo=tz)
                 
                 solar_date_list.append(event_date.strftime('%d/%m/%Y'))
+                thu_list.append(thu_dict[event_date.weekday()]) # Thêm Thứ vào danh sách
                 diff = (event_date.date() - now.date()).days
                 days_left_list.append(diff)
                 
@@ -109,6 +111,7 @@ else:
             except: 
                 days_left_list.append(999)
                 solar_date_list.append("N/A")
+                thu_list.append("N/A")
 
         if messages_to_send:
             current_check = ",".join(messages_to_send)
@@ -118,17 +121,19 @@ else:
 
         df['Sắp đến'] = days_left_list
         df['Ngày DL'] = solar_date_list
+        df['Thứ'] = thu_list # Cập nhật cột Thứ vào dataframe
         df = df.sort_values(by='Sắp đến')
 
         st.subheader("📋 Danh sách sự kiện")
         
-        # Chia 7 cột để thêm cột Ngày DL
-        h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7 = st.columns([2.5, 1.2, 1.8, 1.2, 1.8, 0.6, 0.6])
+        # Chia 8 cột để thêm cột Thứ
+        h_col1, h_col2, h_col3, h_col4, h_col5, h_col6, h_col7, h_col8 = st.columns([2.2, 1.0, 1.5, 1.0, 1.2, 1.5, 0.6, 0.6])
         h_col1.write("**Tên sự kiện**")
         h_col2.write("**Ngày**")
         h_col3.write("**Ngày DL**")
-        h_col4.write("**Loại**")
-        h_col5.write("**Trạng thái**")
+        h_col4.write("**Thứ**")
+        h_col5.write("**Loại**")
+        h_col6.write("**Trạng thái**")
         st.divider()
 
         for index, row in df.iterrows():
@@ -144,16 +149,17 @@ else:
 
             with st.container():
                 st.markdown(f'<div style="background-color: {bg_color}; padding: 10px; border-radius: 5px; margin-bottom: -40px;"></div>', unsafe_allow_html=True)
-                c1, c2, c3, c4, c5, c6, c7 = st.columns([2.5, 1.2, 1.8, 1.2, 1.8, 0.6, 0.6])
+                c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([2.2, 1.0, 1.5, 1.0, 1.2, 1.5, 0.6, 0.6])
                 with c1: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{row['Tên']}</p>", unsafe_allow_html=True)
                 with c2: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Ngày']}</p>", unsafe_allow_html=True)
                 with c3: st.markdown(f"<p style='color:{text_color}; font-style:italic; margin-top:10px;'>{row['Ngày DL']}</p>", unsafe_allow_html=True)
-                with c4: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Loại']}</p>", unsafe_allow_html=True)
-                with c5: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{status_text}</p>", unsafe_allow_html=True)
-                with c6:
+                with c4: st.markdown(f"<p style='color:{text_color}; font-style:italic; margin-top:10px;'>{row['Thứ']}</p>", unsafe_allow_html=True)
+                with c5: st.markdown(f"<p style='color:{text_color}; margin-top:10px;'>{row['Loại']}</p>", unsafe_allow_html=True)
+                with c6: st.markdown(f"<p style='color:{text_color}; font-weight:bold; margin-top:10px;'>{status_text}</p>", unsafe_allow_html=True)
+                with c7:
                     if st.button("🗑️", key=f"del_{index}"):
                         cell = sheet.find(row['Tên']); sheet.delete_rows(cell.row); st.rerun()
-                with c7:
+                with c8:
                     if st.button("📝", key=f"edit_{index}"):
                         st.session_state.editing_row = row['Tên']; st.rerun()
             st.write("")
